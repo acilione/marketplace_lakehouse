@@ -1,0 +1,10 @@
+mode: BACKWARD_TRANSITIVE
+rules:
+  - required_fields_cannot_be_removed
+  - existing_field_types_cannot_change
+  - new_fields_require_defaults
+  - enum_symbols_may_only_be_added
+breaking_change_policy: new_major_version_and_parallel_topic
+owner: data-platform
+classification: public-synthetic
+

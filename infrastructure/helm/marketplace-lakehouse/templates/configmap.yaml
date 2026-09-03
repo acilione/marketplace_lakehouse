@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: marketplace-lakehouse-config
+data:
+  production.yaml: |
+    environment: {{ .Values.environment }}
+    kafka:
+      bootstrap_servers: {{ .Values.kafka.bootstrapServers | quote }}
+      schema_registry_url: {{ .Values.kafka.schemaRegistryUrl | quote }}
+      starting_offsets: latest
+      fail_on_data_loss: true
+      encoding: avro
+      security_protocol: SASL_SSL
+    catalog:
+      name: lakehouse
+      uri: {{ .Values.catalog.uri | quote }}
+      warehouse: {{ .Values.catalog.warehouse | quote }}
+      s3_endpoint: {{ .Values.catalog.s3Endpoint | quote }}
+      s3_region: {{ .Values.catalog.region | quote }}
+      s3_path_style_access: false
+    processing:
+      checkpoint_root: {{ printf "%s/checkpoints" (.Values.catalog.warehouse | trimSuffix "/") | quote }}
+      trigger_interval: 30 seconds
+      watermark: 24 hours
+      shuffle_partitions: 1200
+      target_file_size_bytes: 536870912
+      max_offsets_per_trigger: 1000000
+    observability:
+      log_level: INFO
+      metrics_port: 8000
+      service_name: marketplace-lakehouse
+

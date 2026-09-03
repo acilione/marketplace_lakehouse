@@ -1,0 +1,78 @@
+# Source specifications and local reference material
+*.docx
+*.doc
+*.pdf
+*:Zone.Identifier
+*Zone.Identifier
+
+# Secrets and machine-local configuration
+.env
+.env.*
+!.env.example
+secrets/
+*.pem
+*.key
+*.p12
+*.jks
+
+# Python build, environments, and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.coverage
+coverage.xml
+htmlcov/
+dist/
+build/
+
+# TypeScript/Node build and dependency state
+node_modules/
+.vite/
+architecture-site/coverage/
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Runtime data and state
+data/
+warehouse/
+checkpoints/
+logs/
+tmp/
+work/
+airflow-logs/
+*.log
+*.pid
+*.offset
+
+# Generated reports and benchmark output
+reports/
+artifacts/
+benchmark-results/
+test-results/
+*.prof
+*.flamegraph
+sbom*.json
+
+# Terraform and local Kubernetes state
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+.kube/
+
+# IDE and operating-system metadata
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini

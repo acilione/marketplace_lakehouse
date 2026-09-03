@@ -1,0 +1,36 @@
+environment: production
+
+image:
+  repository: registry.example.invalid/marketplace-lakehouse-spark
+  digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+  pullPolicy: IfNotPresent
+
+serviceAccount:
+  name: marketplace-spark
+  workloadIdentityAnnotations: {}
+
+catalog:
+  uri: https://iceberg-catalog.example.invalid
+  warehouse: s3://marketplace-production-lakehouse/
+  s3Endpoint: https://s3.eu-west-1.amazonaws.com
+  region: eu-west-1
+
+kafka:
+  bootstrapServers: kafka.example.invalid:9093
+  schemaRegistryUrl: https://schema-registry.example.invalid
+
+streaming:
+  enabled: true
+  instances: 4
+  driver:
+    cores: 1
+    memory: 2g
+  executor:
+    instances: 6
+    cores: 2
+    memory: 6g
+
+networkPolicy:
+  sharedServicesNamespaceLabel: shared-services
+  monitoringNamespaceLabel: monitoring
+

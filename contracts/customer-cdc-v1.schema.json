@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:marketplace:customers-cdc:v1",
+  "title": "Customer CDC payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["customer_id", "op"],
+  "properties": {
+    "customer_id": {"type": "string", "minLength": 1},
+    "op": {"enum": ["c", "u", "d", "r"]},
+    "email_token": {"type": ["string", "null"]},
+    "country": {"type": ["string", "null"], "pattern": "^[A-Z]{2}$"},
+    "customer_tier": {"enum": ["STANDARD", "PLUS", "PREMIUM", null]},
+    "source_lsn": {"type": "integer", "minimum": 0}
+  }
+}
+

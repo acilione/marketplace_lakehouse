@@ -1,0 +1,34 @@
+groups:
+  - name: marketplace-lakehouse
+    rules:
+      - alert: SparkWorkerUnavailable
+        expr: up{job="spark-workers"} == 0
+        for: 5m
+        labels:
+          severity: page
+          owner: data-platform
+        annotations:
+          summary: Spark worker has been unavailable for five minutes
+          runbook_url: docs/runbooks.md#streaming-job-stalled
+          dashboard: marketplace-platform
+      - alert: SparkMasterUnavailable
+        expr: up{job="spark-master"} == 0
+        for: 2m
+        labels:
+          severity: page
+          owner: data-platform
+        annotations:
+          summary: Spark control plane is unavailable
+          runbook_url: docs/runbooks.md#streaming-job-stalled
+          dashboard: marketplace-platform
+      - alert: PipelineQualityFailures
+        expr: increase(marketplace_quality_failures_total[15m]) > 0
+        for: 1m
+        labels:
+          severity: page
+          owner: data-operations
+        annotations:
+          summary: A publication quality gate has failed
+          runbook_url: docs/runbooks.md#data-quality-gate-failed
+          dashboard: marketplace-platform
+

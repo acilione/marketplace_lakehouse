@@ -1,0 +1,27 @@
+environment: production
+kafka:
+  bootstrap_servers: kafka-1.internal:9093,kafka-2.internal:9093,kafka-3.internal:9093
+  schema_registry_url: https://schema-registry.internal
+  starting_offsets: latest
+  fail_on_data_loss: true
+  encoding: avro
+  security_protocol: SASL_SSL
+catalog:
+  name: lakehouse
+  uri: https://iceberg-catalog.internal
+  warehouse: s3://marketplace-prod-lakehouse/
+  s3_endpoint: https://s3.eu-west-1.amazonaws.com
+  s3_region: eu-west-1
+  s3_path_style_access: false
+processing:
+  checkpoint_root: s3a://marketplace-prod-checkpoints
+  trigger_interval: 30 seconds
+  watermark: 24 hours
+  shuffle_partitions: 1200
+  target_file_size_bytes: 536870912
+  max_offsets_per_trigger: 1000000
+observability:
+  log_level: INFO
+  metrics_port: 8000
+  service_name: marketplace-lakehouse
+

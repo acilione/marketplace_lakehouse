@@ -1,0 +1,50 @@
+name: Architecture Site Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "architecture-site/**"
+      - ".github/workflows/architecture-pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24.20.0"
+          cache: npm
+          cache-dependency-path: architecture-site/package-lock.json
+      - name: Install locked dependencies
+        working-directory: architecture-site
+        run: npm ci --ignore-scripts
+      - name: Validate and build
+        working-directory: architecture-site
+        run: npm run check
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: architecture-site/dist
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-24.04
+    needs: build
+    steps:
+      - name: Deploy architecture site
+        id: deployment
+        uses: actions/deploy-pages@v4

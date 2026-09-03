@@ -1,0 +1,350 @@
+name: marketplace-lakehouse
+
+x-common-env: &common-env
+  AWS_ACCESS_KEY_ID: ${DEV_MINIO_ROOT_USER:-marketplace_local}
+  AWS_SECRET_ACCESS_KEY: ${DEV_MINIO_ROOT_PASSWORD:-change-me-local-minio-password}
+  AWS_REGION: us-east-1
+  MLH_CATALOG__ACCESS_KEY: ${DEV_MINIO_ROOT_USER:-marketplace_local}
+  MLH_CATALOG__SECRET_KEY: ${DEV_MINIO_ROOT_PASSWORD:-change-me-local-minio-password}
+
+x-spark-common: &spark-common
+  build:
+    context: .
+    dockerfile: docker/spark/Dockerfile
+  image: marketplace-lakehouse-spark:0.1.0
+  restart: unless-stopped
+  environment:
+    <<: *common-env
+    SPARK_NO_DAEMONIZE: "true"
+  volumes:
+    - ./config:/opt/marketplace/config:ro
+  networks: [lakehouse]
+
+services:
+  postgres:
+    image: postgres:18.6-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DEV_POSTGRES_USER:-marketplace_local}
+      POSTGRES_PASSWORD: ${DEV_POSTGRES_PASSWORD:-change-me-local-postgres-password}
+      POSTGRES_DB: postgres
+    volumes:
+      # PostgreSQL 18 stores clusters in a major-versioned subdirectory.
+      # Mount the parent so in-place pg_upgrade --link remains possible.
+      - postgres-data:/var/lib/postgresql
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [lakehouse]
+
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: server /data --console-address :9001
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${DEV_MINIO_ROOT_USER:-marketplace_local}
+      MINIO_ROOT_PASSWORD: ${DEV_MINIO_ROOT_PASSWORD:-change-me-local-minio-password}
+    volumes:
+      - minio-data:/data
+    ports:
+      - "${MLH_MINIO_API_PORT:-19000}:9000"
+      - "${MLH_MINIO_CONSOLE_PORT:-19001}:9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [lakehouse]
+
+  minio-init:
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    restart: "no"
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"
+        mc mb --ignore-existing local/warehouse
+        mc mb --ignore-existing local/checkpoints
+        mc version enable local/warehouse
+    environment:
+      MINIO_ROOT_USER: ${DEV_MINIO_ROOT_USER:-marketplace_local}
+      MINIO_ROOT_PASSWORD: ${DEV_MINIO_ROOT_PASSWORD:-change-me-local-minio-password}
+    networks: [lakehouse]
+
+  iceberg-rest:
+    image: tabulario/iceberg-rest:1.6.0
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      AWS_ACCESS_KEY_ID: ${DEV_MINIO_ROOT_USER:-marketplace_local}
+      AWS_SECRET_ACCESS_KEY: ${DEV_MINIO_ROOT_PASSWORD:-change-me-local-minio-password}
+      AWS_REGION: us-east-1
+      CATALOG_WAREHOUSE: s3://warehouse/
+      CATALOG_CATALOG__IMPL: org.apache.iceberg.jdbc.JdbcCatalog
+      CATALOG_URI: jdbc:postgresql://postgres:5432/iceberg
+      CATALOG_JDBC_USER: ${DEV_POSTGRES_USER:-marketplace_local}
+      CATALOG_JDBC_PASSWORD: ${DEV_POSTGRES_PASSWORD:-change-me-local-postgres-password}
+      CATALOG_IO__IMPL: org.apache.iceberg.aws.s3.S3FileIO
+      CATALOG_S3_ENDPOINT: http://minio:9000
+      CATALOG_S3_PATH__STYLE__ACCESS: "true"
+    ports:
+      - "8181:8181"
+    healthcheck:
+      # The upstream image intentionally contains no curl/wget; probe its TCP listener.
+      test: ["CMD", "/usr/bin/bash", "-ec", "exec 3<>/dev/tcp/localhost/8181"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    networks: [lakehouse]
+
+  kafka:
+    image: apache/kafka:4.2.0
+    hostname: kafka
+    restart: unless-stopped
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: CONTROLLER://:9093,PLAINTEXT://:9092,PLAINTEXT_HOST://:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_LOG_RETENTION_HOURS: 168
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+    ports:
+      - "29092:29092"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    networks: [lakehouse]
+
+  kafka-init:
+    image: apache/kafka:4.2.0
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: "no"
+    entrypoint: ["/bin/bash", "-ec"]
+    command:
+      - |
+        for spec in \
+          marketplace.orders.v1:7 \
+          marketplace.payments.v1:14 \
+          marketplace.inventory.v1:7 \
+          marketplace.shipments.v1:14 \
+          marketplace.customers.cdc.v1:7; do
+          topic="$${spec%%:*}"
+          days="$${spec##*:}"
+          /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
+            --create --if-not-exists --topic "$${topic}" --partitions 6 --replication-factor 1 \
+            --config "retention.ms=$$((days * 86400000))"
+        done
+    networks: [lakehouse]
+
+  schema-registry:
+    image: quay.io/apicurio/apicurio-registry:3.3.0
+    restart: unless-stopped
+    environment:
+      APICURIO_REST_DELETION_ARTIFACT_ENABLED: "false"
+      APICURIO_REST_DELETION_ARTIFACT_VERSION_ENABLED: "false"
+    ports:
+      - "8080:8080"
+    healthcheck:
+      # Apicurio exposes SmallRye health on its management listener.
+      test: ["CMD", "curl", "-f", "http://localhost:9000/health/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    networks: [lakehouse]
+
+  spark-master:
+    <<: *spark-common
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
+    environment:
+      <<: *common-env
+      SPARK_NO_DAEMONIZE: "true"
+      SPARK_MASTER_HOST: spark-master
+      SPARK_MASTER_PORT: 7077
+      SPARK_MASTER_WEBUI_PORT: 8081
+      SPARK_MASTER_OPTS: -Dspark.ui.prometheus.enabled=true
+    ports:
+      - "7077:7077"
+      - "8081:8081"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8081 >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  spark-worker:
+    <<: *spark-common
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
+    depends_on:
+      spark-master:
+        condition: service_healthy
+    environment:
+      <<: *common-env
+      SPARK_NO_DAEMONIZE: "true"
+      SPARK_WORKER_CORES: 2
+      SPARK_WORKER_MEMORY: 2g
+      SPARK_WORKER_WEBUI_PORT: 8082
+      SPARK_WORKER_OPTS: -Dspark.ui.prometheus.enabled=true
+    ports:
+      - "8082:8082"
+
+  trino:
+    image: trinodb/trino:483
+    profiles: [query]
+    restart: unless-stopped
+    depends_on:
+      iceberg-rest:
+        condition: service_healthy
+    volumes:
+      - ./infrastructure/trino/catalog:/etc/trino/catalog:ro
+    environment:
+      DEV_MINIO_ROOT_USER: ${DEV_MINIO_ROOT_USER:-marketplace_local}
+      DEV_MINIO_ROOT_PASSWORD: ${DEV_MINIO_ROOT_PASSWORD:-change-me-local-minio-password}
+    ports:
+      - "8088:8080"
+    networks: [lakehouse]
+
+  prometheus:
+    image: prom/prometheus:v3.14.0
+    profiles: [observability]
+    restart: unless-stopped
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=15d"]
+    volumes:
+      - ./observability/prometheus:/etc/prometheus:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    networks: [lakehouse]
+
+  grafana:
+    image: grafana/grafana:13.2.0
+    profiles: [observability]
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${DEV_AIRFLOW_PASSWORD:-change-me-local-airflow-password}
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    networks: [lakehouse]
+
+  airflow-init:
+    build:
+      context: .
+      dockerfile: docker/airflow/Dockerfile
+    image: marketplace-lakehouse-airflow:0.1.0
+    profiles: [orchestration]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command:
+      - bash
+      - -ec
+      - |
+        airflow db migrate
+        airflow users create --username "$${AIRFLOW_ADMIN}" --password "$${AIRFLOW_PASSWORD}" \
+          --firstname Local --lastname Admin --role Admin --email admin@example.invalid || true
+    environment: &airflow-env
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${DEV_POSTGRES_USER:-marketplace_local}:${DEV_POSTGRES_PASSWORD:-change-me-local-postgres-password}@postgres:5432/airflow
+      AIRFLOW__API__SECRET_KEY: local-only-change-before-shared-use
+      AIRFLOW_CONN_SPARK_STANDALONE: spark://spark-master:7077
+      AIRFLOW_ADMIN: ${DEV_AIRFLOW_ADMIN:-admin}
+      AIRFLOW_PASSWORD: ${DEV_AIRFLOW_PASSWORD:-change-me-local-airflow-password}
+    volumes: &airflow-volumes
+      - ./orchestration/dags:/opt/airflow/dags:ro
+      - ./apps:/opt/marketplace/apps:ro
+      - ./config:/opt/marketplace/config:ro
+      - ./logs/airflow:/opt/airflow/logs
+    networks: [lakehouse]
+
+  airflow-api:
+    image: marketplace-lakehouse-airflow:0.1.0
+    profiles: [orchestration]
+    restart: unless-stopped
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    command: api-server
+    environment: *airflow-env
+    volumes: *airflow-volumes
+    ports:
+      - "8085:8080"
+    networks: [lakehouse]
+
+  airflow-scheduler:
+    image: marketplace-lakehouse-airflow:0.1.0
+    profiles: [orchestration]
+    restart: unless-stopped
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    command: scheduler
+    environment: *airflow-env
+    volumes: *airflow-volumes
+    networks: [lakehouse]
+
+  airflow-dag-processor:
+    image: marketplace-lakehouse-airflow:0.1.0
+    profiles: [orchestration]
+    restart: unless-stopped
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    command: dag-processor
+    environment: *airflow-env
+    volumes: *airflow-volumes
+    networks: [lakehouse]
+
+  architecture-site:
+    build:
+      context: ./architecture-site
+      dockerfile: Dockerfile
+    image: marketplace-lakehouse-architecture:0.1.0
+    profiles: [architecture]
+    restart: unless-stopped
+    ports:
+      - "${MLH_ARCHITECTURE_PORT:-4173}:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    networks: [lakehouse]
+
+networks:
+  lakehouse:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  minio-data:
+  prometheus-data:
+  grafana-data:

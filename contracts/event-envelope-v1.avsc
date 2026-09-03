@@ -1,0 +1,19 @@
+{
+  "type": "record",
+  "name": "MarketplaceEventEnvelope",
+  "namespace": "com.marketplace.events.v1",
+  "doc": "Transport envelope. Domain payload values are canonical UTF-8 strings.",
+  "fields": [
+    {"name": "event_id", "type": "string"},
+    {"name": "event_type", "type": "string"},
+    {"name": "event_version", "type": "int", "default": 1},
+    {"name": "occurred_at", "type": {"type": "long", "logicalType": "timestamp-micros"}},
+    {"name": "produced_at", "type": {"type": "long", "logicalType": "timestamp-micros"}},
+    {"name": "producer", "type": "string"},
+    {"name": "trace_id", "type": "string"},
+    {"name": "partition_key", "type": "string"},
+    {"name": "producer_sequence", "type": ["null", "long"], "default": null},
+    {"name": "payload", "type": {"type": "map", "values": ["null", "string"]}}
+  ]
+}
+

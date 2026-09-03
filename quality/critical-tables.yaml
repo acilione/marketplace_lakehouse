@@ -1,0 +1,29 @@
+datasets:
+  lakehouse.bronze.marketplace_events:
+    owner: data-platform
+    classification: restricted
+    grain: one producer event per event_id
+    freshness_slo_minutes: 3
+    retention_days: 90
+    checks: [event_id_not_null, event_id_unique, source_position_unique]
+  lakehouse.silver.orders:
+    owner: marketplace-analytics
+    classification: internal
+    grain: latest order state per order_id
+    freshness_slo_minutes: 15
+    retention_months: 24
+    checks: [order_id_not_null, order_id_unique, valid_currency, non_negative_amount]
+  lakehouse.silver.customers_scd2:
+    owner: customer-domain
+    classification: confidential-tokenized
+    grain: customer version per customer_id and valid_from
+    freshness_slo_minutes: 15
+    checks: [one_current_row, non_overlapping_intervals]
+  lakehouse.gold.daily_marketplace_kpis:
+    owner: finance-analytics
+    classification: internal
+    grain: metric_date, market, seller_tier
+    freshness_slo_minutes: 360
+    retention_months: 36
+    checks: [grain_unique, control_totals_reconcile]
+

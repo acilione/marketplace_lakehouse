@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:marketplace:orders:v1",
+  "title": "Order event payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["order_id", "seller_id", "customer_token", "currency", "gross_amount", "market"],
+  "properties": {
+    "order_id": {"type": "string", "minLength": 1},
+    "seller_id": {"type": "string", "minLength": 1},
+    "customer_token": {"type": "string", "minLength": 1},
+    "currency": {"type": "string", "pattern": "^[A-Z]{3}$"},
+    "gross_amount": {"type": "string", "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"},
+    "market": {"type": "string", "pattern": "^[A-Z]{2}$"},
+    "created_at": {"type": "string", "format": "date-time"},
+    "reason": {"type": ["string", "null"]}
+  }
+}
+

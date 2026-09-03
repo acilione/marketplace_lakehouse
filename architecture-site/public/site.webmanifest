@@ -1,0 +1,17 @@
+{
+  "name": "Marketplace Lakehouse Architecture",
+  "short_name": "Lakehouse",
+  "description": "Interactive architecture guide for the Marketplace Lakehouse project.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#101b1b",
+  "theme_color": "#101b1b",
+  "icons": [
+    {
+      "src": "./favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

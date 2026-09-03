@@ -1,0 +1,26 @@
+environment: local
+kafka:
+  bootstrap_servers: kafka:9092
+  schema_registry_url: http://schema-registry:8080/apis/registry/v3
+  starting_offsets: earliest
+  fail_on_data_loss: true
+  encoding: json
+catalog:
+  name: lakehouse
+  uri: http://iceberg-rest:8181
+  warehouse: s3://warehouse/
+  s3_endpoint: http://minio:9000
+  s3_region: us-east-1
+  s3_path_style_access: true
+processing:
+  checkpoint_root: s3a://checkpoints
+  trigger_interval: 30 seconds
+  watermark: 24 hours
+  shuffle_partitions: 16
+  target_file_size_bytes: 536870912
+  max_offsets_per_trigger: 100000
+observability:
+  log_level: INFO
+  metrics_port: 8000
+  service_name: marketplace-lakehouse
+

@@ -1,0 +1,3 @@
+CREATE DATABASE iceberg;
+CREATE DATABASE airflow;
+

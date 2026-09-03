@@ -1,0 +1,34 @@
+name: Integration and recovery smoke
+
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  local-profile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - name: Create isolated local credentials
+        run: cp .env.example .env
+      - name: Validate and start core platform
+        run: docker compose up -d --build --wait
+      - name: Execute acceptance demo
+        run: ./scripts/demo.sh
+      - name: Capture service evidence
+        if: always()
+        run: docker compose logs --no-color > integration-services.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-evidence
+          path: integration-services.log
+      - name: Stop platform
+        if: always()
+        run: docker compose down --volumes
+
