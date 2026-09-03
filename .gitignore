@@ -40,7 +40,7 @@ yarn-debug.log*
 pnpm-debug.log*
 
 # Runtime data and state
-data/
+/data/
 warehouse/
 checkpoints/
 logs/

@@ -1,6 +1,10 @@
+import { useEffect, useRef, useState } from "react";
+
 import { ArchitectureMap } from "./components/ArchitectureMap";
 import { DeploymentPanel } from "./components/DeploymentPanel";
 import { guarantees } from "./data/architecture";
+
+const demoCommands = "cp .env.example .env\nmake bootstrap\nmake demo";
 
 const stack = [
   "Spark 4.1.3",
@@ -18,6 +22,33 @@ function ArrowIcon() {
       <path d="M3 9h11M10 4l5 5-5 5" />
     </svg>
   );
+}
+
+function CopyIcon() {
+  return (
+    <svg viewBox="0 0 18 18" aria-hidden="true">
+      <rect x="6" y="5" width="9" height="10" rx="1.5" />
+      <path d="M12 5V3.5A1.5 1.5 0 0 0 10.5 2h-7A1.5 1.5 0 0 0 2 3.5v8A1.5 1.5 0 0 0 3.5 13H6" />
+    </svg>
+  );
+}
+
+function copyWithFallback(text: string) {
+  const input = document.createElement("textarea");
+  input.value = text;
+  input.setAttribute("readonly", "");
+  input.style.position = "fixed";
+  input.style.opacity = "0";
+  document.body.appendChild(input);
+  input.select();
+
+  try {
+    if (!document.execCommand("copy")) {
+      throw new Error("The browser rejected the copy command.");
+    }
+  } finally {
+    input.remove();
+  }
 }
 
 function SystemGlyph() {
@@ -42,6 +73,29 @@ function SystemGlyph() {
 }
 
 export default function App() {
+  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "error">("idle");
+  const resetCopyStatus = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (resetCopyStatus.current) clearTimeout(resetCopyStatus.current);
+  }, []);
+
+  const copyDemoCommands = async () => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(demoCommands);
+      } else {
+        copyWithFallback(demoCommands);
+      }
+      setCopyStatus("copied");
+    } catch {
+      setCopyStatus("error");
+    }
+
+    if (resetCopyStatus.current) clearTimeout(resetCopyStatus.current);
+    resetCopyStatus.current = setTimeout(() => setCopyStatus("idle"), 2200);
+  };
+
   return (
     <>
       <header className="site-header">
@@ -213,6 +267,17 @@ export default function App() {
             <div className="terminal__bar">
               <span /><span /><span />
               <small>ubuntu — marketplace_lakehouse</small>
+              <button
+                className={`terminal__copy terminal__copy--${copyStatus}`}
+                type="button"
+                onClick={copyDemoCommands}
+                aria-label={copyStatus === "copied" ? "Demo commands copied" : "Copy demo commands"}
+              >
+                <CopyIcon />
+                <b aria-live="polite">
+                  {copyStatus === "copied" ? "Copied" : copyStatus === "error" ? "Copy failed" : "Copy"}
+                </b>
+              </button>
             </div>
             <pre><code><span>$</span> cp .env.example .env{`\n`}<span>$</span> make bootstrap{`\n`}<span>$</span> make demo</code></pre>
             <div className="terminal__result"><i /> BRONZE → SILVER → GOLD / VERIFIED</div>
