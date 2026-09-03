@@ -307,7 +307,9 @@ make demo
 
 `make demo` builds and starts the core services, creates topics and tables, emits 2,000 deterministic
 synthetic order events with injected edge cases, executes Bronze → Silver orders → Gold KPIs, and
-prints the certified results. The first image build can take several minutes.
+prints the certified results. Each invocation uses an isolated replay checkpoint, so a recreated
+local Kafka broker cannot conflict with offsets retained by MinIO from an earlier demonstration.
+The first image build can take several minutes.
 
 Core platform lifecycle:
 
