@@ -1,0 +1,140 @@
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+
+import { inspectService, setServiceState } from "./docker.js";
+import { findService, normalizeReadOnlySql, services } from "./policy.js";
+import { executeQuery, getCatalog, getOverview } from "./trino.js";
+
+const port = Number(process.env.PORT ?? 8081);
+const maximumBodyBytes = 16 * 1024;
+
+class HttpError extends Error {
+  constructor(readonly status: number, message: string) {
+    super(message);
+  }
+}
+
+function sendJson(response: ServerResponse, status: number, body: unknown): void {
+  response.writeHead(status, {
+    "Cache-Control": "no-store",
+    "Content-Type": "application/json; charset=utf-8",
+    "X-Content-Type-Options": "nosniff",
+  });
+  response.end(JSON.stringify(body));
+}
+
+async function readJson(request: IncomingMessage): Promise<Record<string, unknown>> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const rawChunk of request) {
+    const chunk = Buffer.isBuffer(rawChunk) ? rawChunk : Buffer.from(rawChunk);
+    size += chunk.length;
+    if (size > maximumBodyBytes) throw new HttpError(413, "Request body is too large.");
+    chunks.push(chunk);
+  }
+  try {
+    const parsed = JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error();
+    return parsed as Record<string, unknown>;
+  } catch {
+    throw new HttpError(400, "A JSON object is required.");
+  }
+}
+
+function requireDashboardRequest(request: IncomingMessage): void {
+  if (request.headers["x-lakehouse-request"] !== "dashboard") {
+    throw new HttpError(403, "Dashboard request header is required.");
+  }
+}
+
+async function route(request: IncomingMessage, response: ServerResponse): Promise<void> {
+  const method = request.method ?? "GET";
+  const url = new URL(request.url ?? "/", "http://control-api");
+
+  if (method === "GET" && url.pathname === "/healthz") {
+    sendJson(response, 200, { status: "ok" });
+    return;
+  }
+  if (method === "GET" && url.pathname === "/api/services") {
+    const states = await Promise.all(services.map(inspectService));
+    sendJson(response, 200, { services: states, refreshedAt: new Date().toISOString() });
+    return;
+  }
+  if (method === "GET" && url.pathname === "/api/catalog") {
+    sendJson(response, 200, { namespaces: await getCatalog() });
+    return;
+  }
+  if (method === "GET" && url.pathname === "/api/overview") {
+    sendJson(response, 200, await getOverview());
+    return;
+  }
+  if (method === "POST" && url.pathname === "/api/query") {
+    requireDashboardRequest(request);
+    const body = await readJson(request);
+    let sql: string;
+    try {
+      sql = normalizeReadOnlySql(body.sql);
+    } catch (error) {
+      throw new HttpError(400, error instanceof Error ? error.message : "Invalid SQL query.");
+    }
+    sendJson(response, 200, await executeQuery(sql));
+    return;
+  }
+
+  const serviceMatch = /^\/api\/services\/([a-z-]+)\/(start|stop)$/.exec(url.pathname);
+  if (method === "POST" && serviceMatch) {
+    requireDashboardRequest(request);
+    const serviceId = serviceMatch[1];
+    const action = serviceMatch[2];
+    if (!serviceId || (action !== "start" && action !== "stop")) throw new HttpError(400, "Invalid service action.");
+    let service;
+    try {
+      service = findService(serviceId);
+    } catch {
+      throw new HttpError(404, `Unknown service: ${serviceId}`);
+    }
+    if (!service.controllable) throw new HttpError(403, `${service.name} is managed by the core platform lifecycle.`);
+    if (action === "start") {
+      for (const dependencyId of service.dependencies) {
+        const dependency = findService(dependencyId);
+        const state = await inspectService(dependency);
+        if (state.status !== "running") {
+          if (!dependency.controllable) throw new HttpError(409, `Start the core platform before ${service.name}.`);
+          await setServiceState(dependency, "start");
+        }
+      }
+    }
+    try {
+      await setServiceState(service, action);
+    } catch (error) {
+      throw new HttpError(409, error instanceof Error ? error.message : `Could not ${action} ${service.name}.`);
+    }
+    sendJson(response, 200, { service: await inspectService(service) });
+    return;
+  }
+
+  throw new HttpError(404, "Endpoint not found.");
+}
+
+const server = createServer((request, response) => {
+  void route(request, response).catch((error: unknown) => {
+    const status = error instanceof HttpError ? error.status : 500;
+    const message = error instanceof Error ? error.message : "Unexpected control API failure.";
+    console.error(JSON.stringify({ level: "error", method: request.method, path: request.url, status, message }));
+    sendJson(response, status, { error: message });
+  });
+});
+
+server.requestTimeout = 35_000;
+server.headersTimeout = 10_000;
+server.listen(port, "0.0.0.0", () => {
+  console.log(JSON.stringify({ level: "info", message: "Lakehouse control API ready", port }));
+});
+
+function shutdown(signal: string): void {
+  console.log(JSON.stringify({ level: "info", message: "Stopping control API", signal }));
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(1), 10_000).unref();
+}
+
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));

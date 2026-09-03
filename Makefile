@@ -5,7 +5,7 @@ BIN := $(VENV)/bin
 ARCHITECTURE_NODE_IMAGE := node:24.20.0-alpine@sha256:e67514e5d0f6c46656005e1b693b2ec9d52e80b641307de684d4a015ba7a4eaf
 ARCHITECTURE_NPM := docker run --rm --user "$$(id -u):$$(id -g)" -e npm_config_cache=/tmp/npm-cache -v "$(CURDIR)/architecture-site:/app" -w /app $(ARCHITECTURE_NODE_IMAGE) npm
 
-.PHONY: bootstrap install format lint type python-test test security check compose-validate up down demo clean architecture-install architecture-test architecture-check architecture-up
+.PHONY: bootstrap install format lint type python-test test security check compose-validate up down demo clean architecture-install architecture-test architecture-check architecture-up dashboard-up dashboard-down
 
 bootstrap:
 	$(PYTHON) -m pip install --user --upgrade virtualenv==21.7.7
@@ -62,6 +62,14 @@ demo:
 
 architecture-up:
 	docker compose --profile architecture up -d --build --wait architecture-site
+
+dashboard-up:
+	$(MAKE) up
+	docker compose --profile query --profile observability create trino prometheus grafana
+	DOCKER_GID="$$(stat -c '%g' /var/run/docker.sock)" docker compose --profile architecture --profile dashboard up -d --build --wait control-api architecture-site
+
+dashboard-down:
+	docker compose --profile architecture --profile dashboard --profile query --profile observability stop architecture-site control-api trino prometheus grafana
 
 clean:
 	rm -rf .pytest_cache .mypy_cache .ruff_cache htmlcov coverage.xml build dist

@@ -1,0 +1,21 @@
+FROM node:24.20.0-alpine@sha256:e67514e5d0f6c46656005e1b693b2ec9d52e80b641307de684d4a015ba7a4eaf AS build
+
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --ignore-scripts
+COPY tsconfig.server.json ./
+COPY server/ server/
+RUN npm run build:server
+
+FROM node:24.20.0-alpine@sha256:e67514e5d0f6c46656005e1b693b2ec9d52e80b641307de684d4a015ba7a4eaf
+
+ENV NODE_ENV=production \
+    PORT=8081
+WORKDIR /app
+COPY --from=build --chown=node:node /app/server-dist/ ./server-dist/
+
+USER node
+EXPOSE 8081
+HEALTHCHECK --interval=10s --timeout=3s --retries=10 \
+  CMD node -e "fetch('http://127.0.0.1:8081/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+CMD ["node", "server-dist/index.js"]

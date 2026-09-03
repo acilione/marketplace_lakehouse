@@ -1,5 +1,24 @@
 # Architecture and processing semantics
 
+## Local operations control room
+
+The `dashboard` Compose profile adds a TypeScript control API behind the architecture site's Nginx
+origin. The browser never receives Docker-socket access and the API has no host port. Its Docker
+adapter maps a fixed service catalog to exact Compose container names; arbitrary container IDs,
+images, commands, and Docker API paths are not accepted. Only Trino, Prometheus, and Grafana are
+lifecycle-controllable. Core stateful services remain under `make up` / `make down` ownership.
+
+The query adapter speaks Trino's HTTP statement protocol and exposes only one statement beginning
+with `SELECT`, `WITH`, `SHOW`, `DESCRIBE`, or `EXPLAIN`. Mutation and session keywords, multiple
+statements, bodies above 16 KiB, execution over 30 seconds, and results above 500 rows are rejected
+or truncated. The catalog browser reads Iceberg REST metadata directly, while dashboard metric
+cards use fixed aggregate queries against certified tables.
+
+This profile is a local operator convenience, not a production control plane. Mounting
+`/var/run/docker.sock` confers host-equivalent authority to the API container. Production service
+lifecycle belongs to Kubernetes RBAC/GitOps and production SQL authorization belongs to the query
+engine and identity provider.
+
 The platform separates transport, immutable evidence, conformance, and consumer publication.
 Each domain topic has its own retention and can be separated into an independent streaming query in
 production. The local query shares one checkpoint lineage while accepted and rejected records use

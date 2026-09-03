@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { ArchitectureMap } from "./components/ArchitectureMap";
 import { DeploymentPanel } from "./components/DeploymentPanel";
+import { OperationsDashboard } from "./components/OperationsDashboard";
 import { guarantees } from "./data/architecture";
 
 const demoCommands = "cp .env.example .env\nmake bootstrap\nmake demo";
@@ -104,13 +105,14 @@ export default function App() {
           <span>Marketplace Lakehouse</span>
         </a>
         <nav aria-label="Primary navigation">
+          <a href="#dashboard">Control room</a>
           <a href="#architecture">Architecture</a>
           <a href="#guarantees">Guarantees</a>
           <a href="#deployment">Deployment</a>
           <a href="#scope">Scope</a>
         </nav>
-        <a className="header-cta" href="#run">
-          Run locally <ArrowIcon />
+        <a className="header-cta" href="#dashboard">
+          Open dashboard <ArrowIcon />
         </a>
       </header>
 
@@ -128,10 +130,10 @@ export default function App() {
               publication.
             </p>
             <div className="hero__actions">
-              <a className="button button--primary" href="#architecture">
-                Explore the system <ArrowIcon />
+              <a className="button button--primary" href="#dashboard">
+                Enter control room <ArrowIcon />
               </a>
-              <a className="button button--quiet" href="#scope">Understand the scope</a>
+              <a className="button button--quiet" href="#architecture">Explore the architecture</a>
             </div>
           </div>
 
@@ -159,6 +161,20 @@ export default function App() {
           <span className="stack-rail__title">COMPATIBILITY SET</span>
           {stack.map((item) => <span key={item}>{item}</span>)}
         </div>
+
+        <section className="content-section dashboard-section" id="dashboard">
+          <div className="section-heading">
+            <div>
+              <span className="eyebrow">Local control room / 00</span>
+              <h2>One surface.<br />The whole lakehouse.</h2>
+            </div>
+            <p>
+              Inspect runtime health, control optional services, browse governed Iceberg tables,
+              visualize certified metrics, and execute bounded read-only Trino queries.
+            </p>
+          </div>
+          <OperationsDashboard />
+        </section>
 
         <section className="content-section" id="architecture">
           <div className="section-heading">

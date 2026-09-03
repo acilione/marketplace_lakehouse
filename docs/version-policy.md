@@ -20,6 +20,7 @@ prohibited. The current compatibility set is:
 | Terraform | 1.15.9 | Current stable CLI |
 | Kubeflow Spark Operator chart | 2.5.2 | Current stable chart |
 | React / React DOM | 19.2.8 | Current stable architecture UI runtime |
+| Node.js types | 26.4.1 | Current declarations used by the dependency-free control API |
 | Vite | 8.2.2 | Current stable frontend build tool |
 | TypeScript | 6.0.3 | Newest stable release supported by typed ESLint 8.69 |
 | Node.js build image | 24.20.0 | Current pinned LTS architecture site build runtime |

@@ -63,3 +63,7 @@ jobs:
         run: docker build --tag marketplace-lakehouse-architecture:${GITHUB_SHA} architecture-site
       - name: Inspect architecture site effective user
         run: test "$(docker image inspect marketplace-lakehouse-architecture:${GITHUB_SHA} --format '{{.Config.User}}')" = "nginx"
+      - name: Build local control API image
+        run: docker build --tag marketplace-lakehouse-control-api:${GITHUB_SHA} --file architecture-site/Dockerfile.control architecture-site
+      - name: Inspect control API effective user
+        run: test "$(docker image inspect marketplace-lakehouse-control-api:${GITHUB_SHA} --format '{{.Config.User}}')" = "node"

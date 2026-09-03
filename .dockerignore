@@ -15,6 +15,7 @@ benchmark-results
 node_modules
 architecture-site/dist
 architecture-site/coverage
+architecture-site/server-dist
 *.docx
 *.pdf
 *.log

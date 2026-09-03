@@ -5,11 +5,13 @@ data. It demonstrates how to move from versioned domain events to replayable evi
 domain state, and atomically published analytical products without hiding the operational controls
 needed between those stages.
 
-This repository contains two complementary deliverables:
+This repository contains three complementary deliverables:
 
 1. An executable local lakehouse that runs end to end on synthetic data with Docker Compose.
 2. A production deployment reference containing Airflow orchestration, Kubernetes/Spark Operator
    resources, Terraform, monitoring rules, runbooks, and release evidence requirements.
+3. A localhost operations dashboard for service health and lifecycle control, Iceberg catalog
+   discovery, certified metric visualization, and bounded read-only Trino queries.
 
 The local system is deliberately compact. It preserves the important data contracts, state
 boundaries, failure paths, and publication semantics, but it is not presented as a production-sized
@@ -52,6 +54,8 @@ This implementation focuses on those platform concerns:
   rewrite, and snapshot expiry.
 - Deterministic synthetic order events with configurable duplicate, malformed, and late-data rates.
 - Docker Compose profiles for Trino, Prometheus/Grafana, Airflow, and the architecture website.
+- A single-origin TypeScript control room with optional-service start/stop controls, live service
+  health, catalog browsing, KPI charts, and a guarded read-only SQL workbench.
 - Unit, property, contract, and transformation tests; linting, strict typing, and dependency audits.
 
 ### Production reference, requiring environment integration
@@ -71,7 +75,8 @@ restore exercises, image signing/scanning, and formal release approval.
 - The repository does not contain or require real customer or production data.
 - The included generator currently populates the order topic only. The other domain pipelines are
   implemented and tested, but require their corresponding events to produce local rows.
-- It does not define a business-specific BI semantic layer or dashboard catalog.
+- The local control room visualizes the supplied demonstration products; it does not define an
+  organization-specific BI semantic layer or dashboard catalog.
 - Local MinIO, single-node Kafka, and standalone Spark are demonstration substitutes, not the
   recommended production stateful topology.
 - Passing local tests is not, by itself, production acceptance. Remaining release evidence is
@@ -104,6 +109,8 @@ flowchart LR
     CB --> FF[Fast-forward main]
     FF --> GD[(Certified Gold tables)]
     GD --> T[Trino / BI / ML]
+    GD --> UI[Local control room]
+    UI -->|read-only SQL| T
 
     O -. run + snapshot evidence .-> A[(ops.pipeline_runs)]
 ```
@@ -330,10 +337,50 @@ registry `:8080`, optional Trino `:8088`, Prometheus `:9090`, Grafana `:3000`, a
 
 ## Run the architecture website
 
-The TypeScript website in [`architecture-site/`](architecture-site/) is a responsive, accessible architecture tour.
-It does not require the lakehouse services and contains no simulated live telemetry.
+The TypeScript website in [`architecture-site/`](architecture-site/) combines the architecture tour
+with a local operations dashboard. Static architecture content works without the platform; live
+service control, table discovery, metrics, and queries require the dashboard profile.
 
-Run its production container:
+Start the dashboard and its core platform with one command:
+
+```bash
+make dashboard-up
+```
+
+Then open <http://localhost:4173>. This creates—but does not start—the optional Trino, Prometheus,
+and Grafana containers so their lifecycle can be controlled from the page. The first Trino image
+download is large. Run `make demo` once to populate the metric cards and query results.
+
+```mermaid
+flowchart LR
+    B[Browser :4173] --> N[Nginx single origin]
+    N --> S[Static React application]
+    N --> API[TypeScript control API]
+    API -->|inspect + allowlisted start/stop| D[Docker Engine socket]
+    API -->|namespace + table metadata| I[Iceberg REST]
+    API -->|bounded read-only SQL| T[Trino]
+    T --> C[Certified Iceberg tables]
+```
+
+The service cards refresh every ten seconds. Core services are visible but intentionally not
+controllable; stopping PostgreSQL, MinIO, Kafka, or Spark independently would violate dependency and
+state guarantees. Trino, Prometheus, and Grafana can be started and stopped from their cards. The
+catalog browser selects a table into the query editor, while metric and result panels keep the
+common data-inspection workflow on the same page.
+
+Stop the dashboard and optional services without deleting data:
+
+```bash
+make dashboard-down
+```
+
+The control API is deliberately local-only. Nginx binds to `127.0.0.1`; the API has no host port,
+runs as a non-root user with a read-only filesystem and no Linux capabilities, accepts only an
+explicit service allowlist, and limits SQL to one read-only statement, 30 seconds, and 500 rows. It
+mounts the Docker socket, which remains host-equivalent privilege despite those controls. Never
+expose this profile on a shared or public host.
+
+To run only the static architecture website, without Docker control:
 
 ```bash
 make architecture-up
@@ -411,7 +458,7 @@ also support `--dry-run`; Gold and backfill jobs require explicit publication in
 | [`orchestration`](orchestration/) | Airflow DAGs that schedule applications without embedding transforms. |
 | [`infrastructure`](infrastructure/) | Trino catalog, Helm chart, and Terraform deployment reference. |
 | [`observability`](observability/) | Prometheus configuration/alerts and Grafana provisioning. |
-| [`architecture-site`](architecture-site/) | React/TypeScript architecture website and static production image. |
+| [`architecture-site`](architecture-site/) | React/TypeScript architecture and operations UI, local control API, and hardened container images. |
 | [`tests`](tests/) | Unit, property, contract, and transformation behavior tests. |
 | [`benchmarks`](benchmarks/) | Reproducible scenario harness; generated results are ignored. |
 | [`docs`](docs/) | ADRs, SLOs, recovery guidance, runbooks, and release acceptance matrix. |

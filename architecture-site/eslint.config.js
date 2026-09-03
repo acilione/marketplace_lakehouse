@@ -5,7 +5,7 @@ import globals from "globals";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["dist/**", "coverage/**"] },
+  { ignores: ["dist/**", "server-dist/**", "coverage/**"] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
@@ -23,5 +23,9 @@ export default tseslint.config(
       "@typescript-eslint/consistent-type-imports": "error",
       "react-refresh/only-export-components": ["error", { allowConstantExport: true }],
     },
+  },
+  {
+    files: ["server/**/*.ts"],
+    languageOptions: { globals: globals.node },
   },
 );

@@ -29,6 +29,7 @@ __pycache__/
 coverage.xml
 htmlcov/
 dist/
+server-dist/
 build/
 
 # TypeScript/Node build and dependency state
