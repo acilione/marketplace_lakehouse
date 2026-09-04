@@ -319,6 +319,112 @@ prints the certified results. Each invocation uses an isolated replay checkpoint
 local Kafka broker cannot conflict with offsets retained by MinIO from an earlier demonstration.
 The first image build can take several minutes.
 
+### Complete end-to-end verification checklist
+
+Below there is a complete command list in order to test the end-to-end pipeline.
+
+- [ ] **Confirm the required tools are available.**
+
+  ```bash
+  docker version
+  docker compose version
+  python3 --version
+  make --version
+  ```
+
+- [ ] **Create local configuration and install the locked development environment.** Review `.env`
+  before continuing if its values differ from the documented local defaults.
+
+  ```bash
+  [ -f .env ] || cp .env.example .env
+  make bootstrap
+  ```
+
+- [ ] **Run all deterministic repository checks.** `make check` covers formatting, linting, strict
+  Python typing, Python tests with coverage, TypeScript lint/tests/builds, and Compose rendering.
+  The security audit additionally requires network access to the Python and npm advisory services.
+
+  ```bash
+  make check
+  make security
+  ```
+
+- [ ] **Start the core platform and unified control room.** All services reported by `docker
+  compose ps` should be running; services with health checks should be `healthy`.
+
+  ```bash
+  make dashboard-up
+  docker compose ps
+  curl -fsS http://localhost:4173/api/services
+  ```
+
+- [ ] **Start and verify the optional query and observability services.** They can instead be
+  started from their cards at <http://localhost:4173>.
+
+  ```bash
+  docker compose --profile query --profile observability up -d --wait trino prometheus grafana
+  curl -fsS http://localhost:8088/v1/info
+  curl -fsS http://localhost:9090/-/ready
+  curl -fsS http://localhost:3000/api/health
+  ```
+
+- [ ] **Observe Kafka while exercising the complete pipeline.** Open the Kafka topic observer at
+  <http://localhost:4173> first, select `marketplace.orders.v1`, and then run the demo in a second
+  terminal. The topic counters and event cards should update while the generator is running.
+
+  ```bash
+  make demo
+  ```
+
+- [ ] **Verify the broker independently.** The first command must list the five `marketplace.*`
+  domain topics. The second prints three stored order records and exits; each row should include a
+  timestamp, partition, offset, key, and JSON payload.
+
+  ```bash
+  docker compose exec kafka /opt/kafka/bin/kafka-topics.sh \
+    --bootstrap-server localhost:9092 --list
+
+  docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh \
+    --bootstrap-server localhost:9092 \
+    --topic marketplace.orders.v1 \
+    --from-beginning \
+    --max-messages 3 \
+    --formatter-property print.timestamp=true \
+    --formatter-property print.partition=true \
+    --formatter-property print.offset=true \
+    --formatter-property print.key=true
+  ```
+
+- [ ] **Query certified data through Trino.** The Bronze count should be non-zero, and the Gold
+  query should return daily rows grouped by market after `make demo` completes.
+
+  ```bash
+  docker compose exec trino trino --catalog lakehouse \
+    --execute "SELECT count(*) AS bronze_events FROM bronze.marketplace_events"
+
+  docker compose exec trino trino --catalog lakehouse \
+    --execute "SELECT metric_date, market, sum(order_count) AS orders, sum(gmv) AS gmv FROM gold.daily_marketplace_kpis GROUP BY metric_date, market ORDER BY metric_date, market"
+  ```
+
+- [ ] **Inspect the graphical evidence.** At <http://localhost:4173>, confirm healthy service cards,
+  Kafka events, non-zero pipeline metrics, catalog namespaces, and results from a read-only query.
+  Also check the Spark master at <http://localhost:8081>, MinIO at <http://localhost:19001>,
+  Prometheus at <http://localhost:9090>, and Grafana at <http://localhost:3000>.
+
+- [ ] **Optionally verify orchestration.** The Airflow UI should load at
+  <http://localhost:8085> and show the repository DAG after initialization.
+
+  ```bash
+  docker compose --profile orchestration up -d --build --wait
+  ```
+
+- [ ] **Stop the environment without deleting persistent volumes.**
+
+  ```bash
+  make dashboard-down
+  make down
+  ```
+
 Core platform lifecycle:
 
 ```bash
@@ -425,10 +531,10 @@ docker compose exec kafka /opt/kafka/bin/kafka-topics.sh \
 docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh \
   --bootstrap-server localhost:9092 \
   --topic marketplace.orders.v1 \
-  --property print.timestamp=true \
-  --property print.partition=true \
-  --property print.offset=true \
-  --property print.key=true
+  --formatter-property print.timestamp=true \
+  --formatter-property print.partition=true \
+  --formatter-property print.offset=true \
+  --formatter-property print.key=true
 ```
 
 Stop the dashboard and optional services without deleting data:
