@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 
 import { inspectService, setServiceState } from "./docker.js";
+import { getKafkaTopics, getRecentKafkaEvents, shutdownKafka } from "./kafka.js";
 import { findService, normalizeReadOnlySql, services } from "./policy.js";
 import { executeQuery, getCatalog, getOverview } from "./trino.js";
 
@@ -65,6 +66,22 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
   }
   if (method === "GET" && url.pathname === "/api/overview") {
     sendJson(response, 200, await getOverview());
+    return;
+  }
+  if (method === "GET" && url.pathname === "/api/kafka/topics") {
+    sendJson(response, 200, await getKafkaTopics());
+    return;
+  }
+  const kafkaEventsMatch = /^\/api\/kafka\/topics\/([^/]+)\/events$/.exec(url.pathname);
+  if (method === "GET" && kafkaEventsMatch) {
+    const topic = decodeURIComponent(kafkaEventsMatch[1] ?? "");
+    const requestedLimit = Number(url.searchParams.get("limit") ?? 30);
+    const limit = Number.isInteger(requestedLimit) ? Math.min(50, Math.max(1, requestedLimit)) : 30;
+    try {
+      sendJson(response, 200, await getRecentKafkaEvents(topic, limit));
+    } catch (error) {
+      throw new HttpError(404, error instanceof Error ? error.message : "Kafka topic is unavailable.");
+    }
     return;
   }
   if (method === "POST" && url.pathname === "/api/query") {
@@ -132,7 +149,7 @@ server.listen(port, "0.0.0.0", () => {
 
 function shutdown(signal: string): void {
   console.log(JSON.stringify({ level: "info", message: "Stopping control API", signal }));
-  server.close(() => process.exit(0));
+  void shutdownKafka().finally(() => server.close(() => process.exit(0)));
   setTimeout(() => process.exit(1), 10_000).unref();
 }
 

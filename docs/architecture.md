@@ -14,6 +14,11 @@ statements, bodies above 16 KiB, execution over 30 seconds, and results above 50
 or truncated. The catalog browser reads Iceberg REST metadata directly, while dashboard metric
 cards use fixed aggregate queries against certified tables.
 
+The Kafka adapter exposes metadata and a bounded event tail for `marketplace.*` topics only. A
+dedicated long-lived consumer starts near each partition's high watermark, keeps at most 100 records
+per topic in process memory, and has auto-commit disabled. Dashboard observation therefore cannot
+move application consumer offsets, publish records, create topics, or alter broker configuration.
+
 This profile is a local operator convenience, not a production control plane. Mounting
 `/var/run/docker.sock` confers host-equivalent authority to the API container. Production service
 lifecycle belongs to Kubernetes RBAC/GitOps and production SQL authorization belongs to the query

@@ -50,8 +50,8 @@ services:
     volumes:
       - minio-data:/data
     ports:
-      - "${MLH_MINIO_API_PORT:-19000}:9000"
-      - "${MLH_MINIO_CONSOLE_PORT:-19001}:9001"
+      - "127.0.0.1:${MLH_MINIO_API_PORT:-19000}:9000"
+      - "127.0.0.1:${MLH_MINIO_CONSOLE_PORT:-19001}:9001"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 5s
@@ -98,7 +98,7 @@ services:
       CATALOG_S3_ENDPOINT: http://minio:9000
       CATALOG_S3_PATH__STYLE__ACCESS: "true"
     ports:
-      - "8181:8181"
+      - "127.0.0.1:8181:8181"
     healthcheck:
       # The upstream image intentionally contains no curl/wget; probe its TCP listener.
       test: ["CMD", "/usr/bin/bash", "-ec", "exec 3<>/dev/tcp/localhost/8181"]
@@ -127,7 +127,7 @@ services:
       KAFKA_LOG_RETENTION_HOURS: 168
       CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
     ports:
-      - "29092:29092"
+      - "127.0.0.1:29092:29092"
     healthcheck:
       test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null"]
       interval: 10s
@@ -165,7 +165,7 @@ services:
       APICURIO_REST_DELETION_ARTIFACT_ENABLED: "false"
       APICURIO_REST_DELETION_ARTIFACT_VERSION_ENABLED: "false"
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     healthcheck:
       # Apicurio exposes SmallRye health on its management listener.
       test: ["CMD", "curl", "-f", "http://localhost:9000/health/ready"]
@@ -185,8 +185,8 @@ services:
       SPARK_MASTER_WEBUI_PORT: 8081
       SPARK_MASTER_OPTS: -Dspark.ui.prometheus.enabled=true
     ports:
-      - "7077:7077"
-      - "8081:8081"
+      - "127.0.0.1:7077:7077"
+      - "127.0.0.1:8081:8081"
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8081 >/dev/null"]
       interval: 10s
@@ -207,7 +207,7 @@ services:
       SPARK_WORKER_WEBUI_PORT: 8082
       SPARK_WORKER_OPTS: -Dspark.ui.prometheus.enabled=true
     ports:
-      - "8082:8082"
+      - "127.0.0.1:8082:8082"
 
   trino:
     image: trinodb/trino:483
@@ -222,7 +222,7 @@ services:
       DEV_MINIO_ROOT_USER: ${DEV_MINIO_ROOT_USER:-marketplace_local}
       DEV_MINIO_ROOT_PASSWORD: ${DEV_MINIO_ROOT_PASSWORD:-change-me-local-minio-password}
     ports:
-      - "8088:8080"
+      - "127.0.0.1:8088:8080"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/v1/info"]
       interval: 10s
@@ -239,7 +239,7 @@ services:
       - ./observability/prometheus:/etc/prometheus:ro
       - prometheus-data:/prometheus
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:9090/-/ready"]
       interval: 10s
@@ -253,15 +253,15 @@ services:
     profiles: [observability]
     restart: unless-stopped
     environment:
-      GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: ${DEV_AIRFLOW_PASSWORD:-change-me-local-airflow-password}
+      GF_SECURITY_ADMIN_USER: ${DEV_GRAFANA_ADMIN:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${DEV_GRAFANA_PASSWORD:-change-me-local-grafana-password}
       GF_AUTH_ANONYMOUS_ENABLED: "false"
     volumes:
       - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:3000/api/health"]
       interval: 10s
@@ -313,7 +313,7 @@ services:
     environment: *airflow-env
     volumes: *airflow-volumes
     ports:
-      - "8085:8080"
+      - "127.0.0.1:8085:8080"
     networks: [lakehouse]
 
   airflow-scheduler:
@@ -367,6 +367,7 @@ services:
       COMPOSE_PROJECT_NAME: marketplace-lakehouse
       DOCKER_SOCKET: /var/run/docker.sock
       ICEBERG_REST_URL: http://iceberg-rest:8181
+      KAFKA_BROKER: kafka:9092
       TRINO_URL: http://trino:8080
     group_add:
       - "${DOCKER_GID:-1001}"

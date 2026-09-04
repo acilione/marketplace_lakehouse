@@ -55,7 +55,8 @@ This implementation focuses on those platform concerns:
 - Deterministic synthetic order events with configurable duplicate, malformed, and late-data rates.
 - Docker Compose profiles for Trino, Prometheus/Grafana, Airflow, and the architecture website.
 - A single-origin TypeScript control room with optional-service start/stop controls, live service
-  health, catalog browsing, KPI charts, and a guarded read-only SQL workbench.
+  health, a read-only Kafka event tail, catalog browsing, KPI charts, and a guarded read-only SQL
+  workbench.
 - Unit, property, contract, and transformation tests; linting, strict typing, and dependency audits.
 
 ### Production reference, requiring environment integration
@@ -335,6 +336,36 @@ docker compose --profile orchestration up -d --build --wait
 Local endpoints include Spark master `:8081`, Spark worker `:8082`, MinIO console `:19001`, schema
 registry `:8080`, optional Trino `:8088`, Prometheus `:9090`, Grafana `:3000`, and Airflow `:8085`.
 
+### Local credentials and authentication
+
+The following values are development defaults from [`.env.example`](.env.example). Values in the
+ignored `.env` file override them. These credentials are intentionally obvious and must never be
+used on a shared host or copied into production. Every published local service port is bound to
+`127.0.0.1`; Docker-network connections continue to use the internal service names.
+
+| Service | URL / connection | Username | Password | Authentication notes |
+|---|---|---|---|---|
+| Unified control room | <http://localhost:4173> | — | — | No login; bound to `127.0.0.1` only. |
+| MinIO console | <http://localhost:19001> | `marketplace_local` (`DEV_MINIO_ROOT_USER`) | `change-me-local-minio-password` (`DEV_MINIO_ROOT_PASSWORD`) | Development root account. |
+| Grafana | <http://localhost:3000> | `admin` (`DEV_GRAFANA_ADMIN`) | `change-me-local-grafana-password` (`DEV_GRAFANA_PASSWORD`) | Login is required; anonymous access is disabled. |
+| Airflow | <http://localhost:8085> | `admin` (`DEV_AIRFLOW_ADMIN`) | `change-me-local-airflow-password` (`DEV_AIRFLOW_PASSWORD`) | Available only with the `orchestration` profile. |
+| PostgreSQL | Internal `postgres:5432` | `marketplace_local` (`DEV_POSTGRES_USER`) | `change-me-local-postgres-password` (`DEV_POSTGRES_PASSWORD`) | Not published to the host. Databases: `iceberg` and `airflow`. |
+| Prometheus | <http://localhost:9090> | — | — | No login in this local profile; its port is restricted to the loopback interface. |
+| Trino | <http://localhost:8088> | — | — | The local profile has no login and is intended for local inspection. |
+| Spark UIs | <http://localhost:8081>, <http://localhost:8082> | — | — | No login in the local standalone profile. |
+| Schema registry | <http://localhost:8080> | — | — | No login locally; destructive REST operations are disabled. |
+| Iceberg REST | <http://localhost:8181> | — | — | No HTTP login locally; object-store credentials are injected server-side. |
+| Kafka | `localhost:29092` | — | — | Plaintext listener with no SASL; never expose it outside the workstation. |
+
+Grafana uses these variables when its data volume is initialized. If the volume already exists,
+apply the currently configured password after starting Grafana:
+
+```bash
+docker compose --profile observability up -d grafana
+docker compose exec grafana sh -ec \
+  'grafana cli admin reset-admin-password "$GF_SECURITY_ADMIN_PASSWORD"'
+```
+
 ## Run the architecture website
 
 The TypeScript website in [`architecture-site/`](architecture-site/) combines the architecture tour
@@ -359,6 +390,7 @@ flowchart LR
     API -->|inspect + allowlisted start/stop| D[Docker Engine socket]
     API -->|namespace + table metadata| I[Iceberg REST]
     API -->|bounded read-only SQL| T[Trino]
+    API -->|isolated non-committing observer| K[Kafka]
     T --> C[Certified Iceberg tables]
 ```
 
@@ -367,6 +399,37 @@ controllable; stopping PostgreSQL, MinIO, Kafka, or Spark independently would vi
 state guarantees. Trino, Prometheus, and Grafana can be started and stopped from their cards. The
 catalog browser selects a table into the query editor, while metric and result panels keep the
 common data-inspection workflow on the same page.
+
+The Kafka topic observer shows every `marketplace.*` topic, retained-message and partition counts,
+and recent records with event time, key, partition, offset, size, and formatted payload. Topic
+counts refresh every five seconds and the selected event tail refreshes every two seconds. It uses
+a dedicated `marketplace-dashboard-observer` consumer with auto-commit disabled, so inspecting
+events does not advance any ingestion or application consumer offset. Its tail is bounded to 100
+in-memory records per topic and 30 records per response.
+
+To watch events arrive, keep <http://localhost:4173> open on the Kafka observer and run this in a
+second terminal:
+
+```bash
+make demo
+```
+
+The direct Kafka CLI remains useful when debugging without the website:
+
+```bash
+# List topics
+docker compose exec kafka /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server localhost:9092 --list
+
+# Follow new order events until Ctrl-C
+docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh \
+  --bootstrap-server localhost:9092 \
+  --topic marketplace.orders.v1 \
+  --property print.timestamp=true \
+  --property print.partition=true \
+  --property print.offset=true \
+  --property print.key=true
+```
 
 Stop the dashboard and optional services without deleting data:
 

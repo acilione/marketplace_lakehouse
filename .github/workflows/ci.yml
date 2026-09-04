@@ -35,7 +35,7 @@ jobs:
       - name: Source security scan
         run: bandit -q -r src apps orchestration
       - name: Dependency audit
-        run: pip-audit
+        run: pip-audit && make architecture-audit
       - name: Compose rendering
         run: docker compose config --quiet
       - name: Repository hygiene

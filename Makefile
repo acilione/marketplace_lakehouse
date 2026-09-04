@@ -5,7 +5,7 @@ BIN := $(VENV)/bin
 ARCHITECTURE_NODE_IMAGE := node:24.20.0-alpine@sha256:e67514e5d0f6c46656005e1b693b2ec9d52e80b641307de684d4a015ba7a4eaf
 ARCHITECTURE_NPM := docker run --rm --user "$$(id -u):$$(id -g)" -e npm_config_cache=/tmp/npm-cache -v "$(CURDIR)/architecture-site:/app" -w /app $(ARCHITECTURE_NODE_IMAGE) npm
 
-.PHONY: bootstrap install format lint type python-test test security check compose-validate up down demo clean architecture-install architecture-test architecture-check architecture-up dashboard-up dashboard-down
+.PHONY: bootstrap install format lint type python-test test security check compose-validate up down demo clean architecture-install architecture-test architecture-check architecture-audit architecture-up dashboard-up dashboard-down
 
 bootstrap:
 	$(PYTHON) -m pip install --user --upgrade virtualenv==21.7.7
@@ -31,7 +31,7 @@ python-test:
 	$(BIN)/pytest --cov --cov-report=term-missing --cov-report=xml
 
 architecture-install:
-	$(ARCHITECTURE_NPM) ci --ignore-scripts
+	$(ARCHITECTURE_NPM) ci --ignore-scripts --no-audit --no-fund
 
 architecture-test: architecture-install
 	$(ARCHITECTURE_NPM) run test
@@ -41,7 +41,10 @@ test: python-test architecture-test
 architecture-check: architecture-install
 	$(ARCHITECTURE_NPM) run check
 
-security:
+architecture-audit:
+	$(ARCHITECTURE_NPM) audit --audit-level=high
+
+security: architecture-audit
 	$(BIN)/bandit -q -r src apps orchestration
 	$(BIN)/pip-audit
 

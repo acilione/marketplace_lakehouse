@@ -2,7 +2,7 @@ FROM node:24.20.0-alpine@sha256:e67514e5d0f6c46656005e1b693b2ec9d52e80b641307de6
 
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci --ignore-scripts
+RUN --mount=type=cache,target=/root/.npm npm ci --ignore-scripts --no-audit --no-fund
 COPY tsconfig.server.json ./
 COPY server/ server/
 RUN npm run build:server
@@ -12,6 +12,8 @@ FROM node:24.20.0-alpine@sha256:e67514e5d0f6c46656005e1b693b2ec9d52e80b641307de6
 ENV NODE_ENV=production \
     PORT=8081
 WORKDIR /app
+COPY package.json package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev --no-audit --no-fund
 COPY --from=build --chown=node:node /app/server-dist/ ./server-dist/
 
 USER node

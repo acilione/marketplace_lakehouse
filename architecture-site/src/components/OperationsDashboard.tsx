@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { KafkaMonitor } from "./KafkaMonitor";
+
 type ServiceStatus = "running" | "stopped" | "starting" | "unhealthy" | "missing";
 
 interface ServiceState {
@@ -197,6 +199,8 @@ export function OperationsDashboard() {
         ))}
         {!services.length && loading && Array.from({ length: 6 }, (_, index) => <div className="service-card service-card--loading" key={index} />)}
       </div>
+
+      <KafkaMonitor />
 
       <div className="data-console">
         <section className="data-overview">

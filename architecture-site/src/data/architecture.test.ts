@@ -42,6 +42,8 @@ describe("architecture document", () => {
     expect(html).toContain("REQUIRES ENVIRONMENT INTEGRATION");
     expect(html).toContain("One surface.");
     expect(html).toContain("Read-only Trino SQL");
+    expect(html).toContain("Kafka topic observer");
+    expect(html).toContain("pipeline offsets are never committed");
     expect(html).toContain("make demo");
     expect(html).toContain("Copy demo commands");
   });
