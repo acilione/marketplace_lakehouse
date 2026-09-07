@@ -44,6 +44,7 @@ export async function executeQuery(sql: string): Promise<QueryResult> {
   const rows: (readonly unknown[])[] = [];
   let columns: readonly TrinoColumn[] = [];
   let queryId = "pending";
+  let cancellationUri: string | undefined;
   let nextRequest: { url: string; init?: RequestInit } | undefined = {
     url: `${trinoUrl}/v1/statement`,
     init: {
@@ -63,17 +64,18 @@ export async function executeQuery(sql: string): Promise<QueryResult> {
       const response: Response = await fetch(nextRequest.url, { ...nextRequest.init, signal: controller.signal });
       if (!response.ok) throw new Error(`Trino returned HTTP ${response.status}.`);
       const page = await response.json() as TrinoPage;
+      cancellationUri = page.nextUri;
       queryId = page.id ?? queryId;
       columns = page.columns ?? columns;
       if (page.error) throw new Error(page.error.message ?? page.error.errorName ?? "Trino query failed.");
       if (page.data) rows.push(...page.data);
 
       if (rows.length >= maximumRows) {
-        if (page.nextUri) await cancelQuery(page.nextUri);
-        return { queryId, columns, rows: rows.slice(0, maximumRows), truncated: true, elapsedMs: Math.round(performance.now() - started) };
+        return { queryId, columns, rows: rows.slice(0, maximumRows), truncated: rows.length > maximumRows || Boolean(page.nextUri), elapsedMs: Math.round(performance.now() - started) };
       }
       nextRequest = page.nextUri ? { url: page.nextUri } : undefined;
     }
+    if (nextRequest) throw new Error("Trino query exceeded the 200 page limit; results are incomplete.");
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
       throw new Error("Trino query exceeded the 30 second timeout.", { cause: error });
@@ -81,6 +83,7 @@ export async function executeQuery(sql: string): Promise<QueryResult> {
     throw error;
   } finally {
     clearTimeout(timeout);
+    if (cancellationUri) await cancelQuery(cancellationUri);
   }
 
   return { queryId, columns, rows, truncated: false, elapsedMs: Math.round(performance.now() - started) };

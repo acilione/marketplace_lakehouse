@@ -6,6 +6,9 @@ rule_files:
   - /etc/prometheus/alerts.yml
 
 scrape_configs:
+  - job_name: pipeline-metrics
+    static_configs:
+      - targets: [pipeline-metrics:8000]
   - job_name: spark-master
     metrics_path: /metrics/master/prometheus
     static_configs:
@@ -17,4 +20,3 @@ scrape_configs:
   - job_name: prometheus
     static_configs:
       - targets: [localhost:9090]
-

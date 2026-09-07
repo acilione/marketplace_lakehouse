@@ -52,7 +52,8 @@ This implementation focuses on those platform concerns:
 - Candidate-branch writes and fast-forward publication for all Gold builds and bounded backfills.
 - Catalog bootstrap, a snapshot-aware audit writer used by order conformance, compaction, manifest
   rewrite, and snapshot expiry.
-- Deterministic synthetic order events with configurable duplicate, malformed, and late-data rates.
+- Deterministic correlated order, payment, inventory, shipment, and customer CDC simulation with
+  smoke, steady, peak, and chaos load profiles.
 - Docker Compose profiles for Trino, Prometheus/Grafana, Airflow, and the architecture website.
 - A single-origin TypeScript control room with optional-service start/stop controls, live service
   health, a read-only Kafka event tail, catalog browsing, KPI charts, and a guarded read-only SQL
@@ -74,8 +75,8 @@ restore exercises, image signing/scanning, and formal release approval.
 ### Explicit non-goals
 
 - The repository does not contain or require real customer or production data.
-- The included generator currently populates the order topic only. The other domain pipelines are
-  implemented and tested, but require their corresponding events to produce local rows.
+- The compact Docker topology is designed for functional and comparative local load testing, not
+  for extrapolating throughput or latency claims to a production cluster.
 - The local control room visualizes the supplied demonstration products; it does not define an
   organization-specific BI semantic layer or dashboard catalog.
 - Local MinIO, single-node Kafka, and standalone Spark are demonstration substitutes, not the
@@ -304,20 +305,87 @@ Prerequisites:
 - GNU Make;
 - WSL/Linux. Airflow production deployments are Linux-only.
 
-From Ubuntu/WSL:
+Clone the repository into any directory, then run the setup from the cloned project root:
 
 ```bash
-cd /home/cilio/devProjects/data_engineering/marketplace_lakehouse
+git clone https://github.com/acilione/marketplace_lakehouse.git
+cd marketplace_lakehouse
 [ -f .env ] || cp .env.example .env
 make bootstrap
 make demo
 ```
+
+If the repository is already cloned, skip the first two commands and run the remaining commands
+from its root directory. No command or application configuration depends on the clone's absolute
+filesystem path.
 
 `make demo` builds and starts the core services, creates topics and tables, emits 2,000 deterministic
 synthetic order events with injected edge cases, executes Bronze → Silver orders → Gold KPIs, and
 prints the certified results. Each invocation uses an isolated replay checkpoint, so a recreated
 local Kafka broker cannot conflict with offsets retained by MinIO from an earlier demonstration.
 The first image build can take several minutes.
+
+### Simulate all five marketplace domains
+
+`make simulate` publishes correlated commerce lifecycles across every topic: customer changes,
+inventory adjustments and reservations, order transitions, payment outcomes, and shipment
+progress. The default smoke profile creates 100 orders and writes a machine-readable producer
+report under the ignored `benchmark-results/` directory.
+
+```bash
+make dashboard-up
+make simulate
+```
+
+Keep <http://localhost:4173> open while the simulator runs. Topic counts refresh every five seconds
+and the selected event feed refreshes every two seconds. Each execution uses a timestamp-based seed
+by default, so repeated simulations create new business and event identifiers.
+
+| Profile | Orders | Target events/s | Purpose |
+|---|---:|---:|---|
+| `smoke` | 100 | 250 | Fast functional verification on a laptop. |
+| `steady` | 5,000 | 1,000 | Sustained representative local traffic. |
+| `peak` | 15,000 | 2,000 | Required local burst scenario. |
+| `chaos` | 5,000 | 1,500 | Elevated duplicate, malformed, late, and failed business outcomes. |
+
+Override the business volume, target rate, or fault rates without changing source code:
+
+```bash
+make simulate \
+  SIMULATION_PROFILE=peak \
+  SIMULATION_ARGS="--orders 20000 --events-per-second 2500 --late-rate 0.05"
+```
+
+For a full, quality-gated stress run, use `make stress`. It starts the control room and optional
+query/observability services, captures each Kafka partition's starting offset, starts ingestion,
+and publishes all five domains while ingestion runs. It drains the accepted and quarantine streams
+after producer completion, runs every Silver job, publishes Gold, and reconciles the results.
+
+```bash
+# Quick end-to-end validation
+make stress STRESS_PROFILE=smoke
+
+# Sustained scenario; expect this to take several minutes locally
+make stress STRESS_PROFILE=steady
+
+# Override profile volume/rate when sizing a specific machine
+make stress \
+  STRESS_PROFILE=peak \
+  STRESS_ARGS="--orders 20000 --events-per-second 2500"
+```
+
+Every run writes `producer.json`, per-topic Bronze evidence, ingestion latency/quarantine evidence,
+dataset row counts, and a final `report.json` under `benchmark-results/stress_<profile>_<seed>_*`.
+The final report includes achieved producer throughput, delivery failures, p50/p95 acknowledgement
+latency, injected fault counts, p50/p95 Kafka-to-Bronze latency, quarantine rate, phase durations,
+and explicit pass/fail checks. Each run has unique entity/event identifiers and a simulation marker;
+historical or unrelated messages cannot satisfy its acceptance checks. Accepted unique records must
+match the producer's expected count, allowing only explicitly injected late records to be dropped
+by the watermark. Every malformed message must reach quarantine. Silver entity counts are compared
+with that run's Bronze keys; Gold counts, GMV and net revenue are compared with Silver aggregates.
+Producer duration overlaps Bronze duration and is reported separately, not added twice.
+Inspect `bronze.log` in the result directory for live processing progress. Local results are evidence for comparison on the recorded machine;
+they are not production capacity claims.
 
 ### Complete end-to-end verification checklist
 
@@ -368,12 +436,12 @@ Below there is a complete command list in order to test the end-to-end pipeline.
   curl -fsS http://localhost:3000/api/health
   ```
 
-- [ ] **Observe Kafka while exercising the complete pipeline.** Open the Kafka topic observer at
-  <http://localhost:4173> first, select `marketplace.orders.v1`, and then run the demo in a second
-  terminal. The topic counters and event cards should update while the generator is running.
+- [ ] **Observe Kafka while exercising every domain.** Open the Kafka topic observer at
+  <http://localhost:4173> first, and then run the smoke simulator in a second terminal. Select each
+  topic and confirm that its counter and event cards update.
 
   ```bash
-  make demo
+  make simulate SIMULATION_PROFILE=smoke
   ```
 
 - [ ] **Verify the broker independently.** The first command must list the five `marketplace.*`
@@ -396,7 +464,8 @@ Below there is a complete command list in order to test the end-to-end pipeline.
   ```
 
 - [ ] **Query certified data through Trino.** The Bronze count should be non-zero, and the Gold
-  query should return daily rows grouped by market after `make demo` completes.
+  query should return daily rows grouped by market after `make stress STRESS_PROFILE=smoke`
+  completes.
 
   ```bash
   docker compose exec trino trino --catalog lakehouse \
@@ -451,13 +520,14 @@ used on a shared host or copied into production. Every published local service p
 
 | Service | URL / connection | Username | Password | Authentication notes |
 |---|---|---|---|---|
-| Unified control room | <http://localhost:4173> | — | — | No login; bound to `127.0.0.1` only. |
+| Control room operator | <http://localhost:4173> | `operator` | `change-me-local-operator-password` (`DEV_DASHBOARD_OPERATOR_PASSWORD`) | Data access and optional service control. |
+| Control room viewer | <http://localhost:4173> | `viewer` | `change-me-local-viewer-password` (`DEV_DASHBOARD_VIEWER_PASSWORD`) | Data access only. |
 | MinIO console | <http://localhost:19001> | `marketplace_local` (`DEV_MINIO_ROOT_USER`) | `change-me-local-minio-password` (`DEV_MINIO_ROOT_PASSWORD`) | Development root account. |
 | Grafana | <http://localhost:3000> | `admin` (`DEV_GRAFANA_ADMIN`) | `change-me-local-grafana-password` (`DEV_GRAFANA_PASSWORD`) | Login is required; anonymous access is disabled. |
 | Airflow | <http://localhost:8085> | `admin` (`DEV_AIRFLOW_ADMIN`) | `change-me-local-airflow-password` (`DEV_AIRFLOW_PASSWORD`) | Available only with the `orchestration` profile. |
 | PostgreSQL | Internal `postgres:5432` | `marketplace_local` (`DEV_POSTGRES_USER`) | `change-me-local-postgres-password` (`DEV_POSTGRES_PASSWORD`) | Not published to the host. Databases: `iceberg` and `airflow`. |
 | Prometheus | <http://localhost:9090> | — | — | No login in this local profile; its port is restricted to the loopback interface. |
-| Trino | <http://localhost:8088> | — | — | The local profile has no login and is intended for local inspection. |
+| Trino | <http://localhost:8088> | — | — | Loopback inspection only; server-side read-only access control blocks writes. |
 | Spark UIs | <http://localhost:8081>, <http://localhost:8082> | — | — | No login in the local standalone profile. |
 | Schema registry | <http://localhost:8080> | — | — | No login locally; destructive REST operations are disabled. |
 | Iceberg REST | <http://localhost:8181> | — | — | No HTTP login locally; object-store credentials are injected server-side. |
@@ -493,7 +563,8 @@ flowchart LR
     B[Browser :4173] --> N[Nginx single origin]
     N --> S[Static React application]
     N --> API[TypeScript control API]
-    API -->|inspect + allowlisted start/stop| D[Docker Engine socket]
+    API -->|restricted service requests| SC[Private service controller]
+    SC -->|inspect + allowlisted start/stop| D[Docker Engine socket]
     API -->|namespace + table metadata| I[Iceberg REST]
     API -->|bounded read-only SQL| T[Trino]
     API -->|isolated non-committing observer| K[Kafka]
@@ -513,11 +584,11 @@ a dedicated `marketplace-dashboard-observer` consumer with auto-commit disabled,
 events does not advance any ingestion or application consumer offset. Its tail is bounded to 100
 in-memory records per topic and 30 records per response.
 
-To watch events arrive, keep <http://localhost:4173> open on the Kafka observer and run this in a
-second terminal:
+To watch all five domain topics receive correlated events, keep <http://localhost:4173> open on the
+Kafka observer and run this in a second terminal:
 
 ```bash
-make demo
+make simulate
 ```
 
 The direct Kafka CLI remains useful when debugging without the website:
@@ -543,11 +614,40 @@ Stop the dashboard and optional services without deleting data:
 make dashboard-down
 ```
 
-The control API is deliberately local-only. Nginx binds to `127.0.0.1`; the API has no host port,
-runs as a non-root user with a read-only filesystem and no Linux capabilities, accepts only an
-explicit service allowlist, and limits SQL to one read-only statement, 30 seconds, and 500 rows. It
-mounts the Docker socket, which remains host-equivalent privilege despite those controls. Never
-expose this profile on a shared or public host.
+The architecture remains readable without login; all data/control API endpoints require a signed,
+HttpOnly, SameSite=Strict session. Sessions expire after eight hours and are invalidated on API
+restart. Failed login attempts are rate-limited. Operators can control allowlisted optional services;
+viewers can inspect and query. Service requests and outcomes emit structured audit logs without passwords.
+The API has no Docker socket. A separate non-root controller owns it on an internal network joined
+only by the API and controller, with no host port and no arbitrary Docker API forwarding. The controller
+still has host-equivalent privilege and must remain isolated. Nginx binds to loopback by default.
+For any shared deployment, replace both development passwords and terminate HTTPS at a trusted proxy
+with `AUTH_SECURE_COOKIE=true`; integrate your identity provider and centralized audit retention.
+SQL has a 30-second deadline, a 500-row result cap, explicit pagination-limit failures and cancellation.
+Trino independently enforces read-only access, including for clients bypassing the dashboard.
+
+Spark master/worker Prometheus servlets are explicitly configured in the image. Short-lived jobs
+persist last-success, last-failure, quality-failure and duration metrics in the `pipeline-metrics`
+volume; its exporter remains available after jobs exit. Bronze also records progress heartbeat and
+source event freshness/lag. Prometheus scrapes the exporter and alerts on failed runs, stale Bronze
+events and missing scrape targets. A stopped producer can legitimately trigger the freshness alert.
+The five core pipelines assume one writer per pipeline. Customer SCD2 performs a full atomic history
+replacement, including obsolete boundaries, and requires complete Bronze history; retaining only
+part of that history requires an affected-customer reconciliation implementation before deployment.
+
+Additional regression commands (after `make dashboard-up` and starting Prometheus):
+
+```bash
+make check
+make security
+make integration-correctness
+make monitoring-test
+make stress STRESS_PROFILE=smoke
+```
+
+`integration-correctness` creates a UUID-named temporary Iceberg table and removes only that test
+table after verifying branch isolation, late-customer reconciliation and replay. `monitoring-test`
+checks alert firing with synthetic time series; it does not inject failures into live datasets.
 
 To run only the static architecture website, without Docker control:
 
@@ -629,7 +729,8 @@ also support `--dry-run`; Gold and backfill jobs require explicit publication in
 | [`observability`](observability/) | Prometheus configuration/alerts and Grafana provisioning. |
 | [`architecture-site`](architecture-site/) | React/TypeScript architecture and operations UI, local control API, and hardened container images. |
 | [`tests`](tests/) | Unit, property, contract, and transformation behavior tests. |
-| [`benchmarks`](benchmarks/) | Reproducible scenario harness; generated results are ignored. |
+| [`benchmarks`](benchmarks/) | Reproducible compute scenarios and protocol; generated results are ignored. |
+| `benchmark-results/` | Ignored local simulator and stress-test evidence. |
 | [`docs`](docs/) | ADRs, SLOs, recovery guidance, runbooks, and release acceptance matrix. |
 
 ## Architectural decisions and operations

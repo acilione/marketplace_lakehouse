@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from marketplace_data.iceberg import IcebergRepository, PipelineRun
-from marketplace_data.jobs.common import context, parser, spark_for
+from marketplace_data.jobs.common import context, observed, parser, spark_for
 from marketplace_data.quality import accepted_values, enforce, non_negative, non_null, unique
 from marketplace_data.tables import bootstrap_tables
 from marketplace_data.transforms.orders import (
@@ -15,6 +15,7 @@ from marketplace_data.transforms.orders import (
 )
 
 
+@observed
 def main(argv: list[str] | None = None) -> None:
     cli = parser(__doc__)
     cli.add_argument("--start-snapshot-id", type=int)

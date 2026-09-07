@@ -6,6 +6,7 @@ x-common-env: &common-env
   AWS_REGION: us-east-1
   MLH_CATALOG__ACCESS_KEY: ${DEV_MINIO_ROOT_USER:-marketplace_local}
   MLH_CATALOG__SECRET_KEY: ${DEV_MINIO_ROOT_PASSWORD:-change-me-local-minio-password}
+  MLH_METRICS_DIRECTORY: /var/lib/marketplace/metrics
 
 x-spark-common: &spark-common
   build:
@@ -18,6 +19,7 @@ x-spark-common: &spark-common
     SPARK_NO_DAEMONIZE: "true"
   volumes:
     - ./config:/opt/marketplace/config:ro
+    - pipeline-metrics:/var/lib/marketplace/metrics
   networks: [lakehouse]
 
 services:
@@ -218,6 +220,7 @@ services:
         condition: service_healthy
     volumes:
       - ./infrastructure/trino/catalog:/etc/trino/catalog:ro
+      - ./infrastructure/trino/access-control.properties:/etc/trino/access-control.properties:ro
     environment:
       DEV_MINIO_ROOT_USER: ${DEV_MINIO_ROOT_USER:-marketplace_local}
       DEV_MINIO_ROOT_PASSWORD: ${DEV_MINIO_ROOT_PASSWORD:-change-me-local-minio-password}
@@ -230,10 +233,23 @@ services:
       retries: 20
     networks: [lakehouse]
 
+  pipeline-metrics:
+    <<: *spark-common
+    command: python3 -m marketplace_data.telemetry
+    profiles: [observability]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/metrics"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
   prometheus:
     image: prom/prometheus:v3.14.0
     profiles: [observability]
     restart: unless-stopped
+    depends_on:
+      pipeline-metrics:
+        condition: service_healthy
     command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=15d"]
     volumes:
       - ./observability/prometheus:/etc/prometheus:ro
@@ -364,15 +380,16 @@ services:
     profiles: [dashboard]
     restart: unless-stopped
     environment:
-      COMPOSE_PROJECT_NAME: marketplace-lakehouse
-      DOCKER_SOCKET: /var/run/docker.sock
+      CONTROLLER_URL: http://service-controller:8082
+      DASHBOARD_OPERATOR_PASSWORD: ${DEV_DASHBOARD_OPERATOR_PASSWORD:-change-me-local-operator-password}
+      DASHBOARD_VIEWER_PASSWORD: ${DEV_DASHBOARD_VIEWER_PASSWORD:-change-me-local-viewer-password}
+      AUTH_SECURE_COOKIE: ${AUTH_SECURE_COOKIE:-false}
       ICEBERG_REST_URL: http://iceberg-rest:8181
       KAFKA_BROKER: kafka:9092
       TRINO_URL: http://trino:8080
-    group_add:
-      - "${DOCKER_GID:-1001}"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      service-controller:
+        condition: service_healthy
     read_only: true
     tmpfs:
       - /tmp:size=16m,mode=1777
@@ -384,13 +401,40 @@ services:
       interval: 10s
       timeout: 3s
       retries: 10
-    networks: [lakehouse]
+    networks: [lakehouse, control]
+
+  service-controller:
+    image: marketplace-lakehouse-control-api:0.1.0
+    build:
+      context: ./architecture-site
+      dockerfile: Dockerfile.control
+    profiles: [dashboard]
+    command: ["node", "server-dist/controller.js"]
+    restart: unless-stopped
+    environment:
+      COMPOSE_PROJECT_NAME: marketplace-lakehouse
+      DOCKER_SOCKET: /var/run/docker.sock
+    group_add: ["${DOCKER_GID:-1001}"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8082/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    networks: [control]
 
 networks:
+  control:
+    internal: true
   lakehouse:
     driver: bridge
 
 volumes:
+  pipeline-metrics:
   postgres-data:
   minio-data:
   prometheus-data:

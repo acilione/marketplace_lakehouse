@@ -1,0 +1,32 @@
+rule_files:
+  - alerts.yml
+evaluation_interval: 30s
+tests:
+  - interval: 30s
+    input_series:
+      - series: 'marketplace_pipeline_last_quality_failure_seconds{pipeline="test"}'
+        values: '300+0x20'
+      - series: 'marketplace_pipeline_last_failure_seconds{pipeline="test"}'
+        values: '300+0x20'
+      - series: 'marketplace_pipeline_last_success_seconds{pipeline="test"}'
+        values: '200+0x20'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: PipelineRunFailed
+        exp_alerts:
+          - exp_labels:
+              pipeline: test
+              severity: page
+            exp_annotations:
+              summary: The most recent pipeline attempt failed
+      - eval_time: 2m
+        alertname: PipelineQualityFailures
+        exp_alerts:
+          - exp_labels:
+              pipeline: test
+              severity: page
+              owner: data-operations
+            exp_annotations:
+              summary: A publication quality gate has failed
+              runbook_url: docs/runbooks.md#data-quality-gate-failed
+              dashboard: marketplace-platform

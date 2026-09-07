@@ -1072,3 +1072,8 @@ a:focus-visible {
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }
+/* Authenticated operations entry; architecture content remains publicly readable. */
+.dashboard-login { max-width: 34rem; margin: 2rem auto; padding: 2rem; border: 1px solid #34434e; border-radius: 1rem; background: #101c25; color: #f4f7fa; }
+.dashboard-login label { display: grid; gap: .5rem; margin: 1rem 0; }
+.dashboard-login input, .dashboard-login select { padding: .8rem; border: 1px solid #60727e; border-radius: .4rem; background: #162630; color: inherit; font: inherit; }
+.dashboard-login button { padding: .8rem 1.5rem; border-radius: .4rem; cursor: pointer; }

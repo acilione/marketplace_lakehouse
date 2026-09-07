@@ -1,12 +1,14 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 
-import { inspectService, setServiceState } from "./docker.js";
+import { inspectService, setServiceState } from "./controller-client.js";
+import { allowLogin, authenticate, clearSessionCookie, login, revokeSession, sessionCookie, validateAuthConfiguration } from "./auth.js";
 import { getKafkaTopics, getRecentKafkaEvents, shutdownKafka } from "./kafka.js";
 import { findService, normalizeReadOnlySql, services } from "./policy.js";
 import { executeQuery, getCatalog, getOverview } from "./trino.js";
 
 const port = Number(process.env.PORT ?? 8081);
 const maximumBodyBytes = 16 * 1024;
+validateAuthConfiguration();
 
 class HttpError extends Error {
   constructor(readonly status: number, message: string) {
@@ -55,6 +57,27 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
     sendJson(response, 200, { status: "ok" });
     return;
   }
+  if (method === "POST" && url.pathname === "/api/login") {
+    requireDashboardRequest(request);
+    if (!allowLogin(request.socket.remoteAddress ?? "unknown")) throw new HttpError(429, "Too many login attempts. Retry in five minutes.");
+    const body = await readJson(request);
+    const identity = login(body.user, body.password);
+    if (!identity) throw new HttpError(401, "Invalid username or password.");
+    response.setHeader("Set-Cookie", sessionCookie(identity));
+    sendJson(response, 200, identity);
+    return;
+  }
+  const identity = authenticate(request);
+  if (!identity) throw new HttpError(401, "Sign in to access the lakehouse dashboard.");
+  if (method === "GET" && url.pathname === "/api/session") {
+    sendJson(response, 200, identity); return;
+  }
+  if (method === "POST" && url.pathname === "/api/logout") {
+    requireDashboardRequest(request);
+    revokeSession(request);
+    response.setHeader("Set-Cookie", clearSessionCookie());
+    sendJson(response, 200, { status: "ok" }); return;
+  }
   if (method === "GET" && url.pathname === "/api/services") {
     const states = await Promise.all(services.map(inspectService));
     sendJson(response, 200, { services: states, refreshedAt: new Date().toISOString() });
@@ -100,6 +123,8 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
   const serviceMatch = /^\/api\/services\/([a-z-]+)\/(start|stop)$/.exec(url.pathname);
   if (method === "POST" && serviceMatch) {
     requireDashboardRequest(request);
+    console.log(JSON.stringify({ event: "service_action_requested", actor: identity.user, role: identity.role, path: url.pathname, at: new Date().toISOString() }));
+    if (identity.role !== "operator") throw new HttpError(403, "Only operators can control services.");
     const serviceId = serviceMatch[1];
     const action = serviceMatch[2];
     if (!serviceId || (action !== "start" && action !== "stop")) throw new HttpError(400, "Invalid service action.");
@@ -123,8 +148,10 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
     try {
       await setServiceState(service, action);
     } catch (error) {
+      console.error(JSON.stringify({ event: "service_action_failed", actor: identity.user, service: serviceId, action, at: new Date().toISOString() }));
       throw new HttpError(409, error instanceof Error ? error.message : `Could not ${action} ${service.name}.`);
     }
+    console.log(JSON.stringify({ event: "service_action_completed", actor: identity.user, service: serviceId, action, at: new Date().toISOString() }));
     sendJson(response, 200, { service: await inspectService(service) });
     return;
   }
@@ -136,7 +163,7 @@ const server = createServer((request, response) => {
   void route(request, response).catch((error: unknown) => {
     const status = error instanceof HttpError ? error.status : 500;
     const message = error instanceof Error ? error.message : "Unexpected control API failure.";
-    console.error(JSON.stringify({ level: "error", method: request.method, path: request.url, status, message }));
+    console.error(JSON.stringify({ level: "error", actor: authenticate(request)?.user ?? "anonymous", method: request.method, path: request.url, status, message }));
     sendJson(response, status, { error: message });
   });
 });

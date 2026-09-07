@@ -7,6 +7,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 
 from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql import functions as F
 from pyspark.sql.types import (
     LongType,
     MapType,
@@ -116,9 +117,23 @@ class IcebergRepository:
             cached.unpersist()
 
     def current_snapshot_id(self, namespace: str, table: str) -> int | None:
-        snapshots = self.spark.table(f"{self.table(namespace, table)}.snapshots")
-        row = snapshots.orderBy("committed_at", ascending=False).select("snapshot_id").first()
+        refs = self.spark.table(f"{self.table(namespace, table)}.refs")
+        row = refs.where(F.col("name") == "main").select("snapshot_id").first()
         return int(row.snapshot_id) if row else None
+
+    def replace_all(self, source: DataFrame, namespace: str, table: str) -> None:
+        """Atomically reconcile a complete rebuilt dataset, including obsolete rows.
+
+        Callers must supply the full source history and serialize writers. Iceberg's
+        overwrite conflict validation prevents an overlapping concurrent overwrite.
+        """
+        cached = source.persist()
+        try:
+            cached.count()
+            materialized = source.sparkSession.createDataFrame(cached.rdd, cached.schema)
+            materialized.writeTo(self.table(namespace, table)).overwrite(F.lit(True))
+        finally:
+            cached.unpersist()
 
     def append_audit(self, run: PipelineRun) -> None:
         values = asdict(run)

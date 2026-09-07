@@ -65,7 +65,11 @@ def scd2_invariants(
     frame: DataFrame, key: str, valid_from: str = "valid_from", valid_to: str = "valid_to"
 ) -> list[CheckResult]:
     current_duplicates = (
-        frame.where("is_current").groupBy(key).count().where(F.col("count") != 1).limit(1).count()
+        frame.groupBy(key)
+        .agg(F.sum(F.col("is_current").cast("int")).alias("current_count"))
+        .where(F.col("current_count") != 1)
+        .limit(1)
+        .count()
     )
     left = frame.alias("left")
     right = frame.alias("right")

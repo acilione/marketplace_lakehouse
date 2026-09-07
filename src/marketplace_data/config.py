@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from enum import Enum
 from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field, SecretStr, model_validator
+from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
@@ -33,11 +34,29 @@ class KafkaSettings(BaseModel):
         "marketplace.shipments.v1",
         "marketplace.customers.cdc.v1",
     )
-    starting_offsets: Literal["earliest", "latest"] = "earliest"
+    starting_offsets: str = "earliest"
     fail_on_data_loss: bool = True
     encoding: Literal["json", "avro"] = "json"
     event_schema_id: int = Field(default=1, ge=1)
     security_protocol: Literal["PLAINTEXT", "SASL_SSL", "SSL"] = "PLAINTEXT"
+
+    @field_validator("starting_offsets")
+    @classmethod
+    def valid_offsets(cls, value: str) -> str:
+        if value in {"earliest", "latest"}:
+            return value
+        offsets = json.loads(value)
+        if not isinstance(offsets, dict) or not offsets:
+            raise ValueError("starting_offsets must be earliest, latest, or explicit Kafka offsets")
+        for topic, partitions in offsets.items():
+            if not isinstance(topic, str) or not isinstance(partitions, dict) or not partitions:
+                raise ValueError("invalid topic offsets")
+            if any(
+                not str(partition).isdigit() or type(offset) is not int or offset < 0
+                for partition, offset in partitions.items()
+            ):
+                raise ValueError("explicit partition offsets must be non-negative integers")
+        return value
 
 
 class CatalogSettings(BaseModel):

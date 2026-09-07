@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from marketplace_data.iceberg import IcebergRepository
-from marketplace_data.jobs.common import context, parser, spark_for
+from marketplace_data.jobs.common import context, observed, parser, spark_for
 from marketplace_data.quality import accepted_values, enforce, non_negative, non_null, unique
 from marketplace_data.tables import bootstrap_tables
 from marketplace_data.transforms.domains import conform_payments, conform_shipments, inventory_daily
 
 
+@observed
 def main(argv: list[str] | None = None) -> None:
     args = parser(__doc__).parse_args(argv)
     job = context("silver_domain_conform", args.config, args.run_id)

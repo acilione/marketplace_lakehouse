@@ -14,12 +14,25 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install stress report runtime
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install -c requirements/runtime.lock -e .
       - name: Create isolated local credentials
         run: cp .env.example .env
       - name: Validate and start core platform
         run: docker compose up -d --build --wait
       - name: Execute acceptance demo
         run: ./scripts/demo.sh
+      - name: Verify real Iceberg recovery semantics
+        run: make integration-correctness
+      - name: Reconcile concurrent five-domain traffic
+        run: make stress STRESS_PROFILE=smoke STRESS_ARGS="--orders 25 --events-per-second 50"
+      - name: Verify alert firing
+        run: make monitoring-test
       - name: Capture service evidence
         if: always()
         run: docker compose logs --no-color > integration-services.log
@@ -27,8 +40,11 @@ jobs:
         if: always()
         with:
           name: integration-evidence
-          path: integration-services.log
+          path: |
+            integration-services.log
+            benchmark-results/**/report.json
+            benchmark-results/**/producer.json
+            benchmark-results/**/bronze.log
       - name: Stop platform
         if: always()
         run: docker compose down --volumes
-

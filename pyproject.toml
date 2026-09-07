@@ -41,6 +41,7 @@ dev = [
 
 [project.scripts]
 marketplace-generate = "marketplace_data.generator:main"
+marketplace-simulate = "marketplace_data.simulator:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/marketplace_data"]

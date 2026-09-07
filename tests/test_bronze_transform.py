@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 
+import pytest
 from pyspark.sql import Row, SparkSession
 from pyspark.sql.types import (
     BinaryType,
@@ -48,3 +50,31 @@ def test_valid_and_malformed_records_are_accounted_for(spark: SparkSession) -> N
     error = routed.quarantined.select("error_code", "source_offset").first()
     assert error.error_code == "DESERIALIZATION_FAILED"
     assert error.source_offset == 2
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("gross_amount", "not-a-number"),
+        ("amount", "1e999"),
+        ("quantity", "several"),
+        ("promised_at", "tomorrow-ish"),
+    ],
+)
+def test_invalid_domain_values_are_flagged_without_failing_batch(
+    spark: SparkSession, field: str, value: str
+) -> None:
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    event = {
+        "event_id": "test",
+        "event_type": "order.created",
+        "occurred_at": now.isoformat(),
+        "produced_at": now.isoformat(),
+        "partition_key": "o1",
+        "payload": {field: value},
+    }
+    frame = spark.createDataFrame(
+        [(b"1", json.dumps(event).encode(), "orders", 0, 1, now)], kafka_schema()
+    )
+    flags = validate_and_route(decode_json(frame), "test").accepted.select("quality_flags").first()
+    assert flags is not None and f"INVALID_{field.upper()}" in flags.quality_flags

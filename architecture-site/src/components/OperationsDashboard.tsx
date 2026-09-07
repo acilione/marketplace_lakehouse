@@ -50,6 +50,7 @@ LIMIT 100`;
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, init);
+  if (response.status === 401) window.dispatchEvent(new Event("lakehouse-session-expired"));
   const document = await response.json() as T & { error?: string };
   if (!response.ok) throw new Error(document.error ?? `Request failed with status ${response.status}.`);
   return document;
@@ -65,7 +66,7 @@ function formatCell(value: unknown): string {
   return String(value);
 }
 
-export function OperationsDashboard() {
+export function OperationsDashboard({ canControl = false }: { canControl?: boolean }) {
   const [services, setServices] = useState<readonly ServiceState[]>([]);
   const [catalog, setCatalog] = useState<readonly CatalogNamespace[]>([]);
   const [overview, setOverview] = useState<Overview | null>(null);
@@ -188,7 +189,7 @@ export function OperationsDashboard() {
                 <button
                   type="button"
                   onClick={() => void controlService(service)}
-                  disabled={pendingService === service.id || service.status === "starting"}
+                  disabled={!canControl || pendingService === service.id || service.status === "starting"}
                 >
                   {pendingService === service.id ? "Working…" : service.status === "running" ? "Stop" : "Start"}
                 </button>

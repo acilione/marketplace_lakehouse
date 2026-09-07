@@ -41,10 +41,9 @@ describe("architecture document", () => {
     expect(html).toContain("Interactive lakehouse data flow");
     expect(html).toContain("REQUIRES ENVIRONMENT INTEGRATION");
     expect(html).toContain("One surface.");
-    expect(html).toContain("Read-only Trino SQL");
-    expect(html).toContain("Kafka topic observer");
-    expect(html).toContain("pipeline offsets are never committed");
+    expect(html).toContain("Sign in to your lakehouse");
     expect(html).toContain("make demo");
+    expect(html).toContain("make simulate");
     expect(html).toContain("Copy demo commands");
   });
 });

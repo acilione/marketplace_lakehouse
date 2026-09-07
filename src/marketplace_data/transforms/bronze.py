@@ -104,7 +104,7 @@ def business_quality_flags() -> Column:
         ),
         F.when(
             F.col("decoded.payload.gross_amount").isNotNull()
-            & (F.col("decoded.payload.gross_amount").cast("decimal(20,2)") < 0),
+            & (F.col("decoded.payload.gross_amount").try_cast("decimal(20,2)") < 0),
             F.lit("NEGATIVE_AMOUNT"),
         ),
         F.when(
@@ -112,4 +112,20 @@ def business_quality_flags() -> Column:
             F.lit("PRODUCED_BEFORE_OCCURRED"),
         ),
     ]
+    for field, data_type in {
+        "gross_amount": "decimal(20,2)",
+        "amount": "decimal(20,2)",
+        "quantity": "long",
+        "quantity_delta": "long",
+        "source_lsn": "long",
+        "promised_at": "timestamp",
+        "created_at": "timestamp",
+    }.items():
+        value = F.col(f"decoded.payload.{field}")
+        flags.append(
+            F.when(
+                value.isNotNull() & value.try_cast(data_type).isNull(),
+                F.lit(f"INVALID_{field.upper()}"),
+            )
+        )
     return F.filter(F.array(*flags), lambda item: item.isNotNull())

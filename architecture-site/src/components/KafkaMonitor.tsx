@@ -175,7 +175,7 @@ export function KafkaMonitor() {
               <div className="event-feed__empty">
                 <span>◉</span>
                 <strong>{loading ? "Connecting to Kafka" : "Waiting for records"}</strong>
-                <p>Run <code>make demo</code> in another terminal to watch events appear here.</p>
+                <p>Run <code>make simulate</code> in another terminal to populate every topic.</p>
               </div>
             )}
           </div>

@@ -22,7 +22,7 @@ groups:
           runbook_url: docs/runbooks.md#streaming-job-stalled
           dashboard: marketplace-platform
       - alert: PipelineQualityFailures
-        expr: increase(marketplace_quality_failures_total[15m]) > 0
+        expr: time() - marketplace_pipeline_last_quality_failure_seconds < 900
         for: 1m
         labels:
           severity: page
@@ -31,4 +31,24 @@ groups:
           summary: A publication quality gate has failed
           runbook_url: docs/runbooks.md#data-quality-gate-failed
           dashboard: marketplace-platform
-
+      - alert: PipelineRunFailed
+        expr: marketplace_pipeline_last_failure_seconds > marketplace_pipeline_last_success_seconds
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: The most recent pipeline attempt failed
+      - alert: PipelineMetricsUnavailable
+        expr: up{job="pipeline-metrics"} == 0
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: Durable pipeline metrics exporter is unavailable
+      - alert: BronzeDataStale
+        expr: (time() - marketplace_pipeline_last_event_seconds{pipeline="bronze_event_ingest"} > 900) and (marketplace_pipeline_last_event_seconds{pipeline="bronze_event_ingest"} > 0)
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: No fresh source events have reached Bronze for fifteen minutes

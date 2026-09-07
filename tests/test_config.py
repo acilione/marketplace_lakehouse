@@ -30,3 +30,20 @@ def test_configuration_rejects_unknown_keys(tmp_path) -> None:  # type: ignore[n
 def test_missing_configuration_is_explicit(tmp_path) -> None:  # type: ignore[no-untyped-def]
     with pytest.raises(FileNotFoundError, match="does not exist"):
         load_settings(tmp_path / "missing.yaml")
+
+
+@pytest.mark.parametrize(
+    "value", ["{}", '{"topic": {"0": -1}}', '{"topic": {"x": 0}}', "[]", '{"topic": []}']
+)
+def test_rejects_invalid_explicit_kafka_offsets(value: str) -> None:
+    from marketplace_data.config import KafkaSettings
+
+    with pytest.raises(ValueError):
+        KafkaSettings(starting_offsets=value)
+
+
+def test_accepts_captured_offsets() -> None:
+    from marketplace_data.config import KafkaSettings
+
+    value = '{"topic": {"0": 42, "1": 0}}'
+    assert KafkaSettings(starting_offsets=value).starting_offsets == value

@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from marketplace_data.iceberg import IcebergRepository
-from marketplace_data.jobs.common import context, parser, spark_for
+from marketplace_data.jobs.common import context, observed, parser, spark_for
 from marketplace_data.quality import enforce, non_negative, non_null, unique
 from marketplace_data.tables import bootstrap_tables
 from marketplace_data.transforms.gold import daily_marketplace_kpis
 from marketplace_data.util import validate_identifier
 
 
+@observed
 def main(argv: list[str] | None = None) -> None:
     cli = parser(__doc__)
     cli.add_argument("--candidate-branch")

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { ArchitectureMap } from "./components/ArchitectureMap";
 import { DeploymentPanel } from "./components/DeploymentPanel";
-import { OperationsDashboard } from "./components/OperationsDashboard";
+import { DashboardLogin } from "./components/DashboardLogin";
 import { guarantees } from "./data/architecture";
 
 const demoCommands = "cp .env.example .env\nmake bootstrap\nmake demo";
@@ -173,7 +173,7 @@ export default function App() {
               visualize certified metrics, and execute bounded read-only Trino queries.
             </p>
           </div>
-          <OperationsDashboard />
+          <DashboardLogin />
         </section>
 
         <section className="content-section" id="architecture">
@@ -277,7 +277,7 @@ export default function App() {
           <div>
             <span className="eyebrow">Run the case study</span>
             <h2>From empty catalog to certified KPI.</h2>
-            <p>The demo generates only deterministic synthetic order data.</p>
+            <p>The quick demo covers orders; <code>make simulate</code> streams all five domains.</p>
           </div>
           <div className="terminal" aria-label="Commands to run the demo">
             <div className="terminal__bar">
