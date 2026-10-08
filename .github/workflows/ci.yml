@@ -14,34 +14,41 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
+      - name: Validate workflow syntax and shell scripts
+        run: docker run --rm -v "${GITHUB_WORKSPACE}:/repo:ro" -w /repo rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 -color
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            requirements/runtime.lock
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
       - name: Install exact development set
-        run: python -m pip install -e '.[spark,dev]'
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install -c requirements/runtime.lock -e '.[spark,dev]'
       - name: Formatting and lint
-        run: make VENV=/usr/local lint
+        run: make lint
       - name: Strict types
-        run: make VENV=/usr/local type
+        run: make type
       - name: Unit and contract tests
-        run: make VENV=/usr/local python-test
+        run: make python-test
       - name: Architecture site lint, tests, and production build
         run: make architecture-check
       - name: Source security scan
-        run: bandit -q -r src apps orchestration
+        run: .venv/bin/bandit -q -r src apps orchestration
       - name: Dependency audit
-        run: pip-audit && make architecture-audit
+        run: .venv/bin/pip-audit && make architecture-audit
       - name: Compose rendering
         run: docker compose config --quiet
       - name: Repository hygiene
         run: ./scripts/verify-repository.sh
       - name: SBOM
-        run: cyclonedx-py environment --output-format JSON --output-file sbom-python.json
+        run: .venv/bin/cyclonedx-py environment .venv/bin/python --output-format JSON --output-file sbom-python.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -56,14 +63,22 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Build immutable candidate
-        run: docker build --pull --tag marketplace-lakehouse:${GITHUB_SHA} --file docker/spark/Dockerfile .
+        run: docker build --pull --tag "marketplace-lakehouse:${GITHUB_SHA}" --file docker/spark/Dockerfile .
       - name: Inspect effective user
-        run: test "$(docker image inspect marketplace-lakehouse:${GITHUB_SHA} --format '{{.Config.User}}')" = "185"
+        run: test "$(docker image inspect "marketplace-lakehouse:${GITHUB_SHA}" --format '{{.Config.User}}')" = "185"
       - name: Build architecture site image
-        run: docker build --tag marketplace-lakehouse-architecture:${GITHUB_SHA} architecture-site
+        run: docker build --tag "marketplace-lakehouse-architecture:${GITHUB_SHA}" architecture-site
       - name: Inspect architecture site effective user
-        run: test "$(docker image inspect marketplace-lakehouse-architecture:${GITHUB_SHA} --format '{{.Config.User}}')" = "nginx"
+        run: test "$(docker image inspect "marketplace-lakehouse-architecture:${GITHUB_SHA}" --format '{{.Config.User}}')" = "nginx"
       - name: Build local control API image
-        run: docker build --tag marketplace-lakehouse-control-api:${GITHUB_SHA} --file architecture-site/Dockerfile.control architecture-site
+        run: docker build --tag "marketplace-lakehouse-control-api:${GITHUB_SHA}" --file architecture-site/Dockerfile.control architecture-site
       - name: Inspect control API effective user
-        run: test "$(docker image inspect marketplace-lakehouse-control-api:${GITHUB_SHA} --format '{{.Config.User}}')" = "node"
+        run: test "$(docker image inspect "marketplace-lakehouse-control-api:${GITHUB_SHA}" --format '{{.Config.User}}')" = "node"
+      - name: Build official object-store sources
+        run: docker compose build minio minio-init
+      - name: Verify object-store binaries
+        run: |
+          docker compose run --rm --no-deps minio --version
+          docker compose run --rm --no-deps --entrypoint mc minio-init --version
+      - name: Verify object-store initialization and S3 operations
+        run: bash scripts/verify-object-store.sh

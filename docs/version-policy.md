@@ -26,6 +26,8 @@ prohibited. The current compatibility set is:
 | TypeScript | 6.0.3 | Newest stable release supported by typed ESLint 8.69 |
 | Node.js build image | 24.20.0 | Current pinned LTS architecture site build runtime |
 | Nginx runtime image | 1.31.4 | Current pinned architecture site runtime |
+| Local MinIO server | RELEASE.2025-10-15T17-29-55Z | Official security release built from commit `9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a` |
+| Local MinIO client | RELEASE.2025-08-13T08-35-41Z | Existing client release built from commit `7394ce0dd2a80935aded936b09fa12cbb3cb8096` |
 
 Independent Python versions are exact in `pyproject.toml`; architecture site dependencies are exact in
 `architecture-site/package.json` and transitively locked in `architecture-site/package-lock.json`. Airflow is
@@ -49,6 +51,11 @@ project release pages for the remaining components.
 6. For streaming state changes, deploy a new query/checkpoint and execute controlled handover.
 7. Record the tested image digest, rollback image, and table snapshot tag in the release evidence.
 
-MinIO's public repository was archived in April 2026 and its last published Docker tag predates its
-final security source release. It is retained only in the isolated laptop profile. Production values
-must target a maintained cloud object store or supported S3-compatible distribution.
+MinIO's public repository was archived in April 2026. Its community distribution is source-only;
+the previously configured Docker Hub and Quay images are unavailable. The local Compose profile
+therefore builds MinIO and `mc` from the official commit-pinned sources using
+[`docker/minio/Dockerfile`](../docker/minio/Dockerfile), a digest-pinned Go toolchain and Alpine runtime,
+and the upstream `go.sum` files. The server uses the
+[final security release](https://github.com/minio/minio/releases/tag/RELEASE.2025-10-15T17-29-55Z)
+instead of the older September binary. The images retain the upstream license and credits.
+Production values must target a maintained cloud object store or supported S3-compatible distribution.

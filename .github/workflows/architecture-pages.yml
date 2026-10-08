@@ -1,11 +1,8 @@
 name: Architecture Site Pages
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "architecture-site/**"
-      - ".github/workflows/architecture-pages.yml"
+  # Publishing is optional. CI builds and tests the website on every PR/push.
+  # Enable Pages in repository settings before explicitly running this workflow.
   workflow_dispatch:
 
 permissions:

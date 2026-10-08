@@ -43,7 +43,10 @@ services:
     networks: [lakehouse]
 
   minio:
-    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    build:
+      context: ./docker/minio
+      target: server
+    image: marketplace-lakehouse-minio:RELEASE.2025-10-15T17-29-55Z
     command: server /data --console-address :9001
     restart: unless-stopped
     environment:
@@ -62,7 +65,10 @@ services:
     networks: [lakehouse]
 
   minio-init:
-    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    build:
+      context: ./docker/minio
+      target: client
+    image: marketplace-lakehouse-mc:RELEASE.2025-08-13T08-35-41Z
     depends_on:
       minio:
         condition: service_healthy
