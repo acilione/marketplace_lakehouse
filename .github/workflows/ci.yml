@@ -30,6 +30,7 @@ jobs:
       - name: Install exact development set
         run: |
           python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip==26.2.1
           .venv/bin/python -m pip install -c requirements/runtime.lock -e '.[spark,dev]'
       - name: Formatting and lint
         run: make lint
