@@ -17,11 +17,9 @@ catalog:
 
 kafka:
   bootstrapServers: kafka.example.invalid:9093
-  schemaRegistryUrl: https://schema-registry.example.invalid
 
 streaming:
   enabled: true
-  instances: 4
   driver:
     cores: 1
     memory: 2g

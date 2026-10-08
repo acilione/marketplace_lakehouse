@@ -1,7 +1,6 @@
 environment: local
 kafka:
   bootstrap_servers: kafka:9092
-  schema_registry_url: http://schema-registry:8080/apis/registry/v3
   starting_offsets: earliest
   fail_on_data_loss: true
   encoding: json
@@ -21,6 +20,4 @@ processing:
   max_offsets_per_trigger: 100000
 observability:
   log_level: INFO
-  metrics_port: 8000
-  service_name: marketplace-lakehouse
 

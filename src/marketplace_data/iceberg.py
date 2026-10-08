@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import asdict, dataclass
 from datetime import datetime
 
@@ -69,10 +68,6 @@ class IcebergRepository:
 
     def table(self, namespace: str, table: str) -> str:
         return qualified_table(self.catalog, namespace, table)
-
-    def create_namespaces(self) -> None:
-        for namespace in ("bronze", "silver", "gold", "quarantine", "ops"):
-            self.spark.sql(f"CREATE NAMESPACE IF NOT EXISTS {self.catalog}.{namespace}")
 
     def merge(
         self,
@@ -175,7 +170,3 @@ class IcebergRepository:
             f"CALL {self.catalog}.system.fast_forward("
             f"table => '{safe_namespace}.{safe_table}', branch => 'main', to => '{safe_branch}')"
         )
-
-    @staticmethod
-    def audit_json(run: PipelineRun) -> str:
-        return json.dumps(asdict(run), default=str, sort_keys=True)

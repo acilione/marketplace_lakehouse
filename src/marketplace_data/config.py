@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
@@ -24,9 +24,12 @@ class Environment(str, Enum):
     TEST = "test"
 
 
-class KafkaSettings(BaseModel):
+class _SettingsModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class KafkaSettings(_SettingsModel):
     bootstrap_servers: str = "kafka:9092"
-    schema_registry_url: str = "http://schema-registry:8080/apis/registry/v3"
     topics: tuple[str, ...] = (
         "marketplace.orders.v1",
         "marketplace.payments.v1",
@@ -37,7 +40,6 @@ class KafkaSettings(BaseModel):
     starting_offsets: str = "earliest"
     fail_on_data_loss: bool = True
     encoding: Literal["json", "avro"] = "json"
-    event_schema_id: int = Field(default=1, ge=1)
     security_protocol: Literal["PLAINTEXT", "SASL_SSL", "SSL"] = "PLAINTEXT"
 
     @field_validator("starting_offsets")
@@ -59,11 +61,10 @@ class KafkaSettings(BaseModel):
         return value
 
 
-class CatalogSettings(BaseModel):
+class CatalogSettings(_SettingsModel):
     name: str = "lakehouse"
     uri: str = "http://iceberg-rest:8181"
     warehouse: str = "s3://warehouse/"
-    branch: str = "main"
     s3_endpoint: str = "http://minio:9000"
     s3_region: str = "us-east-1"
     s3_path_style_access: bool = True
@@ -71,20 +72,17 @@ class CatalogSettings(BaseModel):
     secret_key: SecretStr | None = None
 
 
-class ProcessingSettings(BaseModel):
+class ProcessingSettings(_SettingsModel):
     checkpoint_root: str = "s3a://checkpoints"
     trigger_interval: str = "30 seconds"
     watermark: str = "24 hours"
     shuffle_partitions: int = Field(default=16, ge=1, le=100_000)
     target_file_size_bytes: int = Field(default=536_870_912, ge=16_777_216)
     max_offsets_per_trigger: int = Field(default=100_000, ge=1)
-    query_timeout_seconds: int = Field(default=300, ge=30)
 
 
-class ObservabilitySettings(BaseModel):
+class ObservabilitySettings(_SettingsModel):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
-    metrics_port: int = Field(default=8000, ge=1024, le=65535)
-    service_name: str = "marketplace-lakehouse"
 
 
 class AppSettings(BaseSettings):

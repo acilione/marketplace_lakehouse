@@ -1,7 +1,6 @@
 environment: production
 kafka:
   bootstrap_servers: kafka-1.internal:9093,kafka-2.internal:9093,kafka-3.internal:9093
-  schema_registry_url: https://schema-registry.internal
   starting_offsets: latest
   fail_on_data_loss: true
   encoding: avro
@@ -22,6 +21,4 @@ processing:
   max_offsets_per_trigger: 1000000
 observability:
   log_level: INFO
-  metrics_port: 8000
-  service_name: marketplace-lakehouse
 

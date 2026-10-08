@@ -7,7 +7,6 @@ data:
     environment: {{ .Values.environment }}
     kafka:
       bootstrap_servers: {{ .Values.kafka.bootstrapServers | quote }}
-      schema_registry_url: {{ .Values.kafka.schemaRegistryUrl | quote }}
       starting_offsets: latest
       fail_on_data_loss: true
       encoding: avro
@@ -28,6 +27,4 @@ data:
       max_offsets_per_trigger: 1000000
     observability:
       log_level: INFO
-      metrics_port: 8000
-      service_name: marketplace-lakehouse
 

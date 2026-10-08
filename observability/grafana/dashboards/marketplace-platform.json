@@ -13,11 +13,11 @@
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "fieldConfig": {"defaults": {"unit": "rows"}, "overrides": []},
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
       "id": 2,
-      "targets": [{"expr": "sum(rate(marketplace_pipeline_rows_total[5m])) by (pipeline, outcome)", "legendFormat": "{{pipeline}} {{outcome}}"}],
-      "title": "Pipeline row throughput",
+      "targets": [{"expr": "marketplace_pipeline_duration_seconds", "legendFormat": "{{pipeline}}"}],
+      "title": "Last pipeline run duration",
       "type": "timeseries"
     },
     {
@@ -25,8 +25,8 @@
       "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
       "id": 3,
-      "targets": [{"expr": "marketplace_dataset_freshness_seconds", "legendFormat": "{{dataset}}"}],
-      "title": "Dataset freshness",
+      "targets": [{"expr": "time() - (marketplace_pipeline_last_event_seconds{pipeline=\"bronze_event_ingest\"} > 0)", "legendFormat": "{{pipeline}}"}],
+      "title": "Age of newest source event in Bronze",
       "type": "timeseries"
     },
     {
@@ -34,8 +34,8 @@
       "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
       "id": 4,
-      "targets": [{"expr": "sum(increase(marketplace_quality_failures_total[1h])) by (dataset, check)", "legendFormat": "{{dataset}} {{check}}"}],
-      "title": "Quality failures (1h)",
+      "targets": [{"expr": "(marketplace_pipeline_last_quality_failure_seconds > bool (time() - 3600)) * (marketplace_pipeline_last_quality_failure_seconds > bool 0)", "legendFormat": "{{pipeline}}"}],
+      "title": "Quality failure in the last hour (0/1)",
       "type": "timeseries"
     }
   ],
@@ -45,6 +45,6 @@
   "time": {"from": "now-6h", "to": "now"},
   "title": "Marketplace Platform",
   "uid": "marketplace-platform",
-  "version": 1
+  "version": 2
 }
 

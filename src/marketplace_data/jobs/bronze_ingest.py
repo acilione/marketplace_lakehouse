@@ -13,7 +13,6 @@ from pyspark.sql import functions as F
 from marketplace_data.contracts import CONTRACTS_ROOT
 from marketplace_data.iceberg import IcebergRepository
 from marketplace_data.jobs.common import context, observed, parser, spark_for
-from marketplace_data.observability import ROWS, serve_metrics
 from marketplace_data.tables import bootstrap_tables
 from marketplace_data.telemetry import record
 from marketplace_data.transforms.bronze import decode_avro, decode_json, validate_and_route
@@ -35,9 +34,7 @@ def _kafka_options(job_settings: Any) -> dict[str, str]:
 def _merge_accepted(repository: IcebergRepository, batch: DataFrame, _: int) -> None:
     cached = batch.persist()
     try:
-        count = cached.count()
         repository.merge(cached, "bronze", "marketplace_events", ["event_id"])
-        ROWS.labels("bronze_event_ingest", "accepted").inc(count)
         latest = cached.agg(F.max("source_timestamp").alias("latest")).first()
         if latest and latest.latest:
             # Spark's timestamp is UTC; avoid host-local timezone interpretation.
@@ -55,19 +52,13 @@ def _merge_accepted(repository: IcebergRepository, batch: DataFrame, _: int) -> 
 
 
 def _merge_quarantine(repository: IcebergRepository, batch: DataFrame, _: int) -> None:
-    cached = batch.persist()
-    try:
-        count = cached.count()
-        repository.merge(
-            cached,
-            "quarantine",
-            "marketplace_events",
-            ["source_topic", "source_partition", "source_offset"],
-            update_existing=False,
-        )
-        ROWS.labels("bronze_event_ingest", "quarantined").inc(count)
-    finally:
-        cached.unpersist()
+    repository.merge(
+        batch,
+        "quarantine",
+        "marketplace_events",
+        ["source_topic", "source_partition", "source_offset"],
+        update_existing=False,
+    )
 
 
 @observed
@@ -82,7 +73,6 @@ def main(argv: list[str] | None = None) -> None:
     job = context("bronze_event_ingest", args.config, args.run_id)
     spark = spark_for(job)
     bootstrap_tables(spark, job.settings.catalog.name)
-    serve_metrics(job.settings.observability.metrics_port)
     repository = IcebergRepository(spark, job.settings.catalog.name)
 
     records = spark.readStream.format("kafka").options(**_kafka_options(job.settings)).load()
