@@ -713,9 +713,6 @@ function Metric({
       <span>{label}</span>
       <div>
         <strong>{value.toString().padStart(2, "0")}</strong>
-        <span className="ct-metric-symbol" aria-hidden="true">
-          {accent === "amber" ? "!" : accent === "teal" ? "↗" : "—"}
-        </span>
       </div>
       <small>{detail}</small>
     </div>
