@@ -1,17 +1,81 @@
-# Marketplace Lakehouse
+# Marketplace Control Tower
+
+An order/payment reconciliation workspace backed by the Marketplace Lakehouse project. This branch
+implements the first product slice described in the control-tower idea: identify discrepancies,
+inspect event evidence, and record an investigation through to resolution.
+
+The default screen is a **self-contained synthetic workspace**, not a view of production transactions.
+It contains 64 orders across five markets and eight detected cases. No login, Kafka broker, Spark
+job or external API is needed to explore the case workflow. The **Platform** tab retains the existing
+authenticated live service controls, Kafka observer, catalog and SQL tools; these are separate from
+the synthetic case dataset. There is no live lakehouse-to-case ingestion adapter in this version.
+
+### Run the Control Tower
+
+From the repository root, with Docker and Docker Compose available:
+
+```bash
+[ -f .env ] || cp .env.example .env
+make architecture-up
+```
+
+Open <http://localhost:4173>. This starts only the website. Stop only the website with
+`docker compose --profile architecture stop architecture-site`.
+
+```bash
+# Lint, TypeScript checks, unit tests and production builds in the pinned Node container
+make architecture-check
+```
+
+For a development server, use Node.js 24.20.0 (the version used by the container):
+
+```bash
+cd architecture-site
+npm ci
+npm run dev
+# Open http://localhost:5173
+```
+
+### Control Tower features and implementation
+
+| Feature | Implementation |
+| --- | --- |
+| Single-page workspace | React 19 + strict TypeScript, built by Vite. Cases, Overview, Activity and Platform sections share one desktop viewport with internally scrolling panels; small screens use a stacked layout. CSS and inline SVG, system fonts, no external UI/chart/font service. |
+| Case detection | A pure TypeScript reconciliation engine evaluates actual synthetic order/payment evidence, not hard-coded alert counts. It checks capture absence after 30 minutes, mismatched amounts, and differing currencies. Stable order/rule identifiers keep investigation state separate from the detection signal. |
+| Monetary correctness | Decimal strings are parsed through `BigInt` into safe integer minor units. Active captures are summed by currency. The supported currencies are EUR, GBP and USD, each with two decimal places. Unsafe values fail explicitly; currencies are never converted or netted together. |
+| Evidence timeline | Confirmation, authorization, capture and full reversal events carry occurrence time, received time, event/payment identifiers, topic and offset. Expand an event to inspect its synthetic provenance. Duplicate event IDs are deduplicated; conflicting duplicates are rejected. |
+| Investigation lifecycle | New → In review → Resolved/Dismissed, with explicit reopening. Operators can assign a team and add notes. Resolution requires an owner, a recorded verified cause and a substantive note. A dismissal is not counted as a confirmed cause. |
+| Activity and persistence | Every successful change appends a revisioned action with time, actor and note. A versioned, validated `localStorage` document persists this demo in the current browser. Stale-tab writes are detected before saving; storage failures visibly fall back to memory. This is not a shared, immutable audit system. |
+| Overview | Current rule counts, open/high-priority cases, review completion and recorded causes are calculated from the dataset and investigation state. Counts distinguish an observed signal from an open workflow. No fabricated trends or production performance claims are shown. |
+| Late evidence simulation | **Overview → Receive next batch** receives one delayed capture for `ORD-10482`, advances the synthetic snapshot by five minutes and re-evaluates the rules. The signal clears while the case and its history remain available for review. No Kafka message is produced by this button. |
+| Search and export | Search order, seller, market or rule; filter status and priority. Export creates a JSON download containing the synthetic snapshot, triggering evidence, signal state and investigation histories. Reset asks for confirmation and clears only this demo workspace. |
+| Live platform tools | The existing same-origin Nginx → Node control API → Trino / Iceberg REST / Kafka / private Docker controller path remains available under Platform. It requires `make dashboard-up` and dashboard authentication; it never replaces missing live results with synthetic cases. |
+
+Source boundaries: [`model.ts`](architecture-site/src/control-tower/model.ts) owns rules and workflow
+transitions; [`demo.ts`](architecture-site/src/control-tower/demo.ts) owns the deterministic evidence;
+[`storage.ts`](architecture-site/src/control-tower/storage.ts) validates saved workspaces;
+[`App.tsx`](architecture-site/src/App.tsx) coordinates navigation, filters, persistence and summaries;
+[`CaseDetail.tsx`](architecture-site/src/control-tower/CaseDetail.tsx) renders evidence and investigation
+controls. Existing [`server/`](architecture-site/server/) modules own authenticated live operations.
+
+See [Control Tower design and acceptance checks](docs/control-tower.md) for the rule semantics,
+state boundaries, browser tests, a complete walkthrough and the requirements for a live deployment.
+
+## Lakehouse platform
 
 A production-oriented Apache Spark and Apache Iceberg reference platform for marketplace event
 data. It demonstrates how to move from versioned domain events to replayable evidence, deterministic
 domain state, and atomically published analytical products without hiding the operational controls
 needed between those stages.
 
-This repository contains three complementary deliverables:
+This repository contains four complementary deliverables:
 
 1. An executable local lakehouse that runs end to end on synthetic data with Docker Compose.
 2. A production deployment reference containing Airflow orchestration, Kubernetes/Spark Operator
    resources, Terraform, monitoring rules, runbooks, and release evidence requirements.
 3. A localhost operations dashboard for service health and lifecycle control, Iceberg catalog
    discovery, certified metric visualization, and bounded read-only Trino queries.
+4. The Control Tower's bounded synthetic reconciliation and investigation workspace described above.
 
 The local system is deliberately compact. It preserves the important data contracts, state
 boundaries, failure paths, and publication semantics, but it is not presented as a production-sized
@@ -430,14 +494,14 @@ It deliberately does not delete orphan files. The separate
 [`benchmark harness`](benchmarks/run.py) measures a synthetic skewed join and records execution plan
 and environment evidence; it is distinct from the end-to-end Kafka stress test.
 
-### Website: architecture exploration and operational dashboard
+### Website: Control Tower and operational dashboard
 
-[`App.tsx`](architecture-site/src/App.tsx) combines the public architecture explanation with a
-login-gated control room. [`ArchitectureMap`](architecture-site/src/components/ArchitectureMap.tsx)
-and [`DeploymentPanel`](architecture-site/src/components/DeploymentPanel.tsx) render typed static
+[`App.tsx`](architecture-site/src/App.tsx) opens the synthetic reconciliation workspace described
+above. Its Platform tab contains a login-gated live control room and a separate Architecture view.
+[`ArchitectureMap`](architecture-site/src/components/ArchitectureMap.tsx) and
+[`DeploymentPanel`](architecture-site/src/components/DeploymentPanel.tsx) render typed static
 descriptions and change the selected stage/profile with React state. They do not infer architecture
-from the running cluster. The command-copy button uses the Clipboard API with a legacy DOM fallback,
-announces success/failure, and clears its feedback timer on unmount.
+from the running cluster. The previous landing-page hero and command terminal are no longer rendered.
 
 [`OperationsDashboard`](architecture-site/src/components/OperationsDashboard.tsx) polls service
 state, requests catalog metadata, displays SQL-derived counts and market charts, and hosts the SQL
@@ -851,9 +915,10 @@ docker compose exec grafana sh -ec \
 
 ## Run the architecture website
 
-The TypeScript website in [`architecture-site/`](architecture-site/) combines the architecture tour
-with a local operations dashboard. Static architecture content works without the platform; live
-service control, table discovery, metrics, and queries require the dashboard profile.
+The TypeScript website in [`architecture-site/`](architecture-site/) opens the Control Tower's
+synthetic case workspace. Its Platform tab includes the architecture explorer and local operations
+dashboard. Synthetic cases and architecture content work without the data platform; live service
+control, table discovery, metrics, and queries require the dashboard profile.
 
 Start the dashboard and its core platform with one command:
 
@@ -863,7 +928,9 @@ make dashboard-up
 
 Then open <http://localhost:4173>. This creates—but does not start—the optional Trino, Prometheus,
 and Grafana containers so their lifecycle can be controlled from the page. The first Trino image
-download is large. Run `make demo` once to populate the metric cards and query results.
+download is large. Open **Platform → Live tools**, sign in, and run `make demo` once to populate
+the live platform metric cards and query results. This does not alter the separate synthetic cases
+or the reconciliation metrics at the top of the website.
 
 ```mermaid
 flowchart LR
@@ -956,7 +1023,7 @@ make stress STRESS_PROFILE=smoke
 table after verifying branch isolation, late-customer reconciliation and replay. `monitoring-test`
 checks alert firing with synthetic time series; it does not inject failures into live datasets.
 
-To run only the static architecture website, without Docker control:
+To run only the synthetic Control Tower and static architecture explorer, without Docker control:
 
 ```bash
 make architecture-up
@@ -965,7 +1032,7 @@ make architecture-up
 Then open <http://localhost:4173>. Stop it with:
 
 ```bash
-docker compose --profile architecture down
+docker compose --profile architecture stop architecture-site
 ```
 
 For frontend development with Node 22.12+:
@@ -979,7 +1046,7 @@ npm run dev
 Publishing is optional and disabled for automatic pushes. The
 [`architecture-pages.yml`](.github/workflows/architecture-pages.yml) workflow is manual-only:
 enable GitHub Pages with **GitHub Actions** as its source, then explicitly dispatch the workflow
-if publication is wanted later. It publishes only static architecture content; it cannot host the
+if publication is wanted later. It publishes the synthetic workspace and static architecture view; it cannot host the
 Node control API, Docker controller, or live lakehouse. Normal CI still tests and builds the website
 without requiring Pages to be enabled. A `configure-pages` HTTP 404 indicates missing Pages setup,
 not a failed frontend build; no Pages setup is needed for local use.
@@ -1081,7 +1148,7 @@ Bronze does not honor it. Gold and backfill jobs require explicit publication in
 | [`orchestration`](orchestration/) | Airflow DAGs that schedule applications without embedding transforms. |
 | [`infrastructure`](infrastructure/) | Trino catalog, Helm chart, and Terraform deployment reference. |
 | [`observability`](observability/) | Prometheus configuration/alerts and Grafana provisioning. |
-| [`architecture-site`](architecture-site/) | React/TypeScript architecture and operations UI, local control API, and hardened container images. |
+| [`architecture-site`](architecture-site/) | React/TypeScript Control Tower, reconciliation model, architecture/live operations UI, local control API, and hardened container images. |
 | [`tests`](tests/) | Unit, property, contract, and transformation behavior tests. |
 | [`benchmarks`](benchmarks/) | Reproducible compute scenarios and protocol; generated results are ignored. |
 | `benchmark-results/` | Ignored local simulator and stress-test evidence. |

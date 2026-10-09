@@ -125,29 +125,6 @@ export const deploymentProfiles: readonly DeploymentProfile[] = [
   },
 ] as const;
 
-export const guarantees = [
-  {
-    code: "E1",
-    title: "Evidence first",
-    text: "Raw payload, topic, partition, offset, timestamps, and failure reason survive malformed input.",
-  },
-  {
-    code: "D2",
-    title: "Deterministic state",
-    text: "Event time, producer sequence, partition, and offset establish a complete ordering for conformance.",
-  },
-  {
-    code: "Q3",
-    title: "Quality before visibility",
-    text: "Null, uniqueness, domain, amount, reconciliation, and SCD2 invariants block certification.",
-  },
-  {
-    code: "R4",
-    title: "Recoverable by design",
-    text: "Kafka retention, versioned objects, catalog backups, checkpoints, and Iceberg snapshots form the recovery chain.",
-  },
-] as const;
-
 export function getStage(id: StageId): ArchitectureStage {
   const stage = stages.find((candidate) => candidate.id === id);
   if (!stage) {
