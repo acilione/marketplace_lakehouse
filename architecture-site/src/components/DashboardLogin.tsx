@@ -3,27 +3,44 @@ import { OperationsDashboard } from "./OperationsDashboard";
 
 export function DashboardLogin({
   children,
+  allowGuest = false,
 }: {
   children?: (role: string) => ReactNode;
+  allowGuest?: boolean;
 }) {
   const [role, setRole] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [showLogin, setShowLogin] = useState(false);
   const [user, setUser] = useState("operator");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
-    const expired = () => setRole(null);
-    window.addEventListener("lakehouse-session-expired", expired);
-    void fetch("./api/session", { signal: controller.signal })
-      .then(async (response) => {
-        if (response.ok && !controller.signal.aborted)
-          setRole(((await response.json()) as { role: string }).role);
+    const refreshSession = () => {
+      void fetch("./api/session", {
+        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]),
       })
-      .catch(() => undefined);
+        .then(async (response) => {
+          const identity = response.ok
+            ? ((await response.json()) as { role: string })
+            : null;
+          if (!controller.signal.aborted) setRole(identity?.role ?? null);
+        })
+        .catch(() => {
+          if (!controller.signal.aborted) setRole(null);
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setLoading(false);
+        });
+    };
+    window.addEventListener("lakehouse-session-expired", refreshSession);
+    window.addEventListener("lakehouse-session-changed", refreshSession);
+    refreshSession();
     return () => {
       controller.abort();
-      window.removeEventListener("lakehouse-session-expired", expired);
+      window.removeEventListener("lakehouse-session-expired", refreshSession);
+      window.removeEventListener("lakehouse-session-changed", refreshSession);
     };
   }, []);
   async function signIn() {
@@ -49,7 +66,9 @@ export function DashboardLogin({
       };
       if (!response.ok) throw new Error(result.error ?? "Sign in failed.");
       setRole(result.role);
+      setShowLogin(false);
       setPassword("");
+      window.dispatchEvent(new Event("lakehouse-session-changed"));
     } catch (caught) {
       setError(
         caught instanceof Error ? caught.message : "Dashboard unavailable.",
@@ -70,6 +89,8 @@ export function DashboardLogin({
       if (!response.ok && response.status !== 401)
         throw new Error("Sign out failed. Please retry.");
       setRole(null);
+      setLoading(true);
+      window.dispatchEvent(new Event("lakehouse-session-changed"));
     } catch (caught) {
       setError(
         caught instanceof Error ? caught.message : "Sign out unavailable.",
@@ -78,14 +99,21 @@ export function DashboardLogin({
       setBusy(false);
     }
   }
-  if (role)
+  if (loading) return <p role="status">Loading workspace…</p>;
+  if (role && (role !== "guest" || allowGuest) && !showLogin)
     return (
       <>
         <div className="ops-toolbar">
-          <span>Signed in as {role}</span>
-          <button type="button" disabled={busy} onClick={() => void signOut()}>
-            Sign out
-          </button>
+          <span>{role === "guest" ? "Read-only access" : `Signed in as ${role}`}</span>
+          {role === "guest" ? (
+            <button type="button" onClick={() => setShowLogin(true)}>
+              Sign in to edit
+            </button>
+          ) : (
+            <button type="button" disabled={busy} onClick={() => void signOut()}>
+              Sign out
+            </button>
+          )}
           {error && <span role="alert">{error}</span>}
         </div>
         {children ? (
@@ -111,7 +139,11 @@ export function DashboardLogin({
       )}
       <label>
         Username
-        <select value={user} onChange={(event) => setUser(event.target.value)}>
+        <select
+          aria-label="Username"
+          value={user}
+          onChange={(event) => setUser(event.target.value)}
+        >
           <option>operator</option>
           <option>viewer</option>
         </select>
@@ -135,6 +167,11 @@ export function DashboardLogin({
       >
         {busy ? "Signing in…" : "Sign in"}
       </button>
+      {allowGuest && role === "guest" && (
+        <button type="button" disabled={busy} onClick={() => setShowLogin(false)}>
+          Back to dashboard
+        </button>
+      )}
       {error && <p role="alert">{error}</p>}
     </section>
   );

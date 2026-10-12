@@ -135,3 +135,12 @@ def bootstrap_tables(spark: SparkSession, catalog: str = "lakehouse") -> None:
         spark.sql(f"CREATE NAMESPACE IF NOT EXISTS {safe_catalog}.{namespace}")
     for ddl in TABLE_DDL:
         spark.sql(ddl.format(catalog=safe_catalog))
+    # Additive migrations preserve existing local/production data. Legacy KPI
+    # rows remain unclassified until the full Gold recovery job rebuilds them.
+    for table, column, kind in (
+        ("silver.orders", "producer_sequence", "BIGINT"),
+        ("gold.daily_marketplace_kpis", "currency", "STRING"),
+    ):
+        name = f"{safe_catalog}.{table}"
+        if column not in spark.table(name).columns:
+            spark.sql(f"ALTER TABLE {name} ADD COLUMN {column} {kind}")

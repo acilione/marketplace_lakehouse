@@ -33,7 +33,7 @@ export const services: readonly ServiceDefinition[] = [
   { id: "grafana", name: "Grafana", role: "Operations dashboards", group: "observe", controllable: true, url: "http://localhost:3000", dependencies: ["prometheus"] },
 ] as const;
 
-const prohibitedSql = /\b(ALTER|CALL|CREATE|DELETE|DROP|GRANT|INSERT|MERGE|REFRESH|RENAME|REVOKE|SET|TRUNCATE|UPDATE|USE)\b/i;
+const prohibitedSql = /\b(ALTER|CALL|CREATE|DELETE|DROP|GRANT|INSERT|MERGE|REFRESH|RENAME|REVOKE|SESSION|SET|TRUNCATE|UPDATE|USE)\b/i;
 const readOnlyStart = /^(DESCRIBE|EXPLAIN|SELECT|SHOW|WITH)\b/i;
 
 export function normalizeReadOnlySql(input: unknown): string {

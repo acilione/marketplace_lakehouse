@@ -9,6 +9,40 @@ permissions:
   contents: read
 
 jobs:
+  analytics-integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - name: Prepare isolated configuration
+        run: cp .env.example .env
+      - name: Exercise Kafka to published analytics
+        run: make analytics-demo ANALYTICS_ORDERS=100 ANALYTICS_CUSTOMERS=20
+      - name: Verify corrections, quarantine, partial failure and replay equivalence
+        run: make analytics-verify
+      - name: Verify coordinated output maintenance
+        run: |
+          make analytics-retention-plan
+          make analytics-compact
+          make analytics-reference-check
+      - name: Verify anonymous read API and protected administration
+        run: |
+          curl --fail --retry 5 --retry-delay 2 'http://localhost:24173/api/analytics?view=cohorts&currency=EUR' | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["status"] == "ready"; assert d["cohorts"]'
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:24173/api/services)" = 401
+      - name: Collect service diagnostics
+        if: always()
+        run: |
+          mkdir -p artifacts/ci
+          docker compose -p marketplace-lakehouse-showcase -f docker-compose.yml -f docker-compose.showcase.yml logs --no-color > artifacts/ci/services.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: analytics-integration-evidence
+          path: artifacts/ci/
+      - name: Stop ephemeral services
+        if: always()
+        run: docker compose -p marketplace-lakehouse-showcase -f docker-compose.yml -f docker-compose.showcase.yml down
+
   quality:
     runs-on: ubuntu-24.04
     timeout-minutes: 30

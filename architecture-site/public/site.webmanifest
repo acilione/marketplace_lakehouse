@@ -1,7 +1,7 @@
 {
-  "name": "Marketplace Control Tower",
-  "short_name": "Control Tower",
-  "description": "Order and payment reconciliation workspace.",
+  "name": "Marketplace Analytics",
+  "short_name": "Marketplace",
+  "description": "Customer profiling and purchase analytics.",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#f5f7f6",

@@ -43,11 +43,17 @@ class PipelineCollector:
             "duration": "Last run duration in seconds",
             "last_event": "Newest ingested source event timestamp",
             "source_to_bronze": "Newest batch source-to-Bronze lag in seconds",
+            "publication": "Most recent analytics publication timestamp",
         }
         families = {
             key: GaugeMetricFamily(f"marketplace_pipeline_{key}_seconds", text, labels=["pipeline"])
             for key, text in fields.items()
         }
+        families["rejected_snapshots"] = GaugeMetricFamily(
+            "marketplace_pipeline_rejected_snapshots",
+            "Rejected snapshots in the last published range",
+            labels=["pipeline"],
+        )
         for path in directory.glob("*.json"):
             try:
                 values = json.loads(path.read_text())

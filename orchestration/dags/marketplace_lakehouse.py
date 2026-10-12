@@ -14,6 +14,7 @@ SPARK_PACKAGES = ",".join(
         "org.apache.iceberg:iceberg-aws-bundle:1.11.0",
         "org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.3",
         "org.apache.spark:spark-avro_2.13:4.1.3",
+        "org.apache.hadoop:hadoop-aws:3.4.2",
     ]
 )
 
@@ -67,7 +68,7 @@ with DAG(
     customers = spark_task(
         "silver_customers",
         "/opt/marketplace/apps/silver_conform/customers.py",
-        ["--config", "/opt/marketplace/config/local.yaml"],
+        ["--config", "/opt/marketplace/config/local.yaml", "--full-rebuild"],
     )
     domains = spark_task(
         "silver_domains",
@@ -88,3 +89,28 @@ with DAG(
 
     ingest >> [orders, customers, domains]  # type: ignore[operator]
     [orders, domains] >> gold
+
+
+with DAG(
+    dag_id="customer_purchase_analytics",
+    description="Incremental purchases and published customer/product analytics",
+    schedule="*/15 * * * *",
+    start_date=pendulum.datetime(2026, 1, 1, tz="UTC"),
+    catchup=False,
+    max_active_runs=1,
+    default_args=DEFAULT_ARGS,
+    tags=["customer-analytics", "spark", "iceberg"],
+) as analytics_dag:
+    purchase_ingest = spark_task(
+        "purchase_ingest",
+        "/opt/marketplace/apps/analytics/ingest.py",
+        ["--config", "/opt/marketplace/config/local.yaml", "--available-now"],
+    )
+    publish_analytics = spark_task(
+        "publish_customer_analytics",
+        "/opt/marketplace/apps/analytics/publish.py",
+        ["--config", "/opt/marketplace/config/local.yaml"],
+    )
+    # Running on UTC date boundaries also ages profiles with no new purchases.
+    # Source publications stay authenticated; production never sets --public-demo.
+    purchase_ingest >> publish_analytics

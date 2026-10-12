@@ -1,0 +1,14 @@
+{
+  "rootGroups": [{
+    "name": "analytics", "softMemoryLimit": "70%", "hardConcurrencyLimit": 8, "maxQueued": 40,
+    "schedulingPolicy": "weighted_fair",
+    "subGroups": [
+      {"name": "interactive", "softMemoryLimit": "50%", "hardConcurrencyLimit": 6, "maxQueued": 30, "schedulingWeight": 3},
+      {"name": "exploration", "softMemoryLimit": "20%", "hardConcurrencyLimit": 2, "maxQueued": 10, "schedulingWeight": 1}
+    ]
+  }],
+  "selectors": [
+    {"source": "marketplace-interactive", "group": "analytics.interactive"},
+    {"group": "analytics.exploration"}
+  ]
+}

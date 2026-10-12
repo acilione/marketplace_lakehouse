@@ -7,6 +7,7 @@ import json
 import random
 import time
 import uuid
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -24,29 +25,40 @@ class Scenario:
     malformed_rate: float = 0.002
     late_rate: float = 0.01
     events_per_second: int = 500
+    customer_count: int = 10_000
+    hot_customer_fraction: float = 0.0
     start_time: datetime = field(default_factory=lambda: datetime(2026, 1, 1, tzinfo=timezone.utc))
 
     def __post_init__(self) -> None:
-        if self.count < 1 or self.events_per_second < 1:
+        if self.count < 1 or self.events_per_second < 1 or self.customer_count < 1:
             raise ValueError("count and events_per_second must be positive")
-        for value in (self.duplicate_rate, self.malformed_rate, self.late_rate):
+        for value in (
+            self.duplicate_rate,
+            self.malformed_rate,
+            self.late_rate,
+            self.hot_customer_fraction,
+        ):
             if not 0 <= value <= 1:
                 raise ValueError("fault rates must be between zero and one")
 
 
-def generate_events(scenario: Scenario) -> list[EventEnvelope | bytes]:
+def iter_events(scenario: Scenario) -> Iterator[EventEnvelope | bytes]:
+    """Constant-memory stream. Duplicate deliveries reuse the original envelope."""
     # Determinism is the security property for synthetic replay; this is not used for credentials.
     rng = random.Random(scenario.seed)  # noqa: S311  # nosec B311
     now = scenario.start_time
-    events: list[EventEnvelope | bytes] = []
-    valid: list[EventEnvelope] = []
     for index in range(scenario.count):
         if rng.random() < scenario.malformed_rate:
-            events.append(b'{"event_id":"truncated"')
+            yield b'{"event_id":"truncated"'
             continue
         order_id = f"order-{index:010d}"
         occurred_at = now - timedelta(minutes=30 if rng.random() < scenario.late_rate else 0)
         amount = Decimal(rng.randrange(100, 100_000)) / Decimal(100)
+        customer = (
+            0
+            if rng.random() < scenario.hot_customer_fraction
+            else rng.randrange(scenario.customer_count)
+        )
         event = EventEnvelope(
             event_id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"{scenario.seed}:{index}")),
             event_type="order.created",
@@ -60,7 +72,7 @@ def generate_events(scenario: Scenario) -> list[EventEnvelope | bytes]:
             payload={
                 "order_id": order_id,
                 "seller_id": f"seller-{rng.randrange(100):04d}",
-                "customer_token": f"tok-{rng.randrange(10_000):08d}",
+                "customer_token": f"tok-{customer:08d}",
                 "currency": "EUR",
                 "gross_amount": str(amount),
                 "market": rng.choice(["IT", "DE", "FR", "ES"]),
@@ -70,11 +82,14 @@ def generate_events(scenario: Scenario) -> list[EventEnvelope | bytes]:
                 "quantity": str(rng.randrange(1, 5)),
             },
         )
-        valid.append(event)
-        events.append(event)
+        yield event
         if rng.random() < scenario.duplicate_rate:
-            events.append(event)
-    return events
+            yield event
+
+
+def generate_events(scenario: Scenario) -> list[EventEnvelope | bytes]:
+    """Convenience for small fixtures; publishers must use the streaming iterator."""
+    return list(iter_events(scenario))
 
 
 def publish(bootstrap_servers: str, scenario: Scenario, topic: str) -> None:
@@ -88,7 +103,7 @@ def publish(bootstrap_servers: str, scenario: Scenario, topic: str) -> None:
         }
     )
     interval = 1 / scenario.events_per_second
-    for item in generate_events(scenario):
+    for item in iter_events(scenario):
         started = time.monotonic()
         if isinstance(item, bytes):
             value, key = item, b"malformed"
@@ -99,7 +114,8 @@ def publish(bootstrap_servers: str, scenario: Scenario, topic: str) -> None:
         remaining = interval - (time.monotonic() - started)
         if remaining > 0:
             time.sleep(remaining)
-    producer.flush(30)
+    if producer.flush(30):
+        raise RuntimeError("Kafka delivery timed out with messages still queued")
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -112,6 +128,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--malformed-rate", type=float, default=0.002)
     parser.add_argument("--late-rate", type=float, default=0.01)
     parser.add_argument("--events-per-second", type=int, default=500)
+    parser.add_argument("--customer-count", type=int, default=10_000)
+    parser.add_argument("--hot-customer-fraction", type=float, default=0)
     parser.add_argument("--stdout", action="store_true")
     return parser.parse_args(argv)
 
@@ -125,9 +143,11 @@ def main(argv: list[str] | None = None) -> None:
         malformed_rate=args.malformed_rate,
         late_rate=args.late_rate,
         events_per_second=args.events_per_second,
+        customer_count=args.customer_count,
+        hot_customer_fraction=args.hot_customer_fraction,
     )
     if args.stdout:
-        for event in generate_events(scenario):
+        for event in iter_events(scenario):
             value = (
                 event.decode(errors="replace")
                 if isinstance(event, bytes)

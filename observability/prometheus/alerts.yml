@@ -1,6 +1,24 @@
 groups:
   - name: marketplace-lakehouse
     rules:
+      - alert: AnalyticsRefreshStale
+        expr: (time() - marketplace_pipeline_last_success_seconds{pipeline="customer_analytics_v1"} > 1800) and (marketplace_pipeline_last_success_seconds{pipeline="customer_analytics_v1"} > 0)
+        for: 5m
+        labels:
+          severity: warning
+          owner: data-platform
+        annotations:
+          summary: Customer analytics has not refreshed successfully for thirty minutes
+          runbook_url: docs/analytics-operations.md
+      - alert: AnalyticsSnapshotsRejected
+        expr: marketplace_pipeline_rejected_snapshots{pipeline="customer_analytics_v1"} > 0
+        for: 1m
+        labels:
+          severity: warning
+          owner: data-operations
+        annotations:
+          summary: Purchase snapshots require source correction
+          runbook_url: docs/analytics-operations.md
       - alert: SparkWorkerUnavailable
         expr: up{job="spark-workers"} == 0
         for: 5m

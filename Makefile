@@ -14,6 +14,69 @@ STRESS_SEED ?= $(shell date -u +%s)
 STRESS_ARGS ?=
 SHOWCASE_CONFIG ?= config/showcase.json
 SHOWCASE_ARGS ?=
+ANALYTICS_ORDERS ?= 1000
+ANALYTICS_CUSTOMERS ?= 100
+ANALYTICS_SEED ?= 42
+ANALYTICS_PROJECT ?= marketplace-lakehouse-showcase
+ANALYTICS_COMPOSE := docker compose -p $(ANALYTICS_PROJECT) -f docker-compose.yml -f docker-compose.showcase.yml
+export ANALYTICS_PROJECT
+
+.PHONY: analytics-demo analytics-refresh analytics-up analytics-load analytics-stop analytics-retail-publish
+analytics-stop:
+	$(ANALYTICS_COMPOSE) --profile '*' stop
+
+analytics-up:
+	$(ANALYTICS_COMPOSE) up -d --build --wait postgres minio iceberg-rest kafka spark-master spark-worker
+	$(ANALYTICS_COMPOSE) run --rm kafka-init
+	DOCKER_GID="$$(stat -c '%g' /var/run/docker.sock)" $(ANALYTICS_COMPOSE) up -d --build --wait trino service-controller control-api architecture-site
+
+ANALYTICS_SKIP ?= 0
+analytics-load:
+	$(ANALYTICS_COMPOSE) run --rm --no-deps spark-master python3 -m marketplace_data.purchase_source --generate $(ANALYTICS_ORDERS) --customers $(ANALYTICS_CUSTOMERS) --seed $(ANALYTICS_SEED) --skip $(ANALYTICS_SKIP) --as-of 2026-10-12T12:00:00+00:00
+
+analytics-demo: analytics-up analytics-load
+	$(MAKE) analytics-refresh ANALYTICS_ARGS="--as-of 2026-10-12 --public-demo"
+
+# Without --public-demo, new publications require an authenticated dashboard user.
+ANALYTICS_ARGS ?=
+analytics-refresh:
+	$(ANALYTICS_COMPOSE) run --rm --no-deps spark-master /opt/spark/bin/spark-submit --master spark://spark-master:7077 /opt/marketplace/apps/analytics/ingest.py --available-now
+	$(ANALYTICS_COMPOSE) run --rm --no-deps spark-master /opt/spark/bin/spark-submit --master spark://spark-master:7077 /opt/marketplace/apps/analytics/publish.py $(ANALYTICS_ARGS)
+
+.PHONY: analytics-verify
+analytics-verify:
+	$(ANALYTICS_COMPOSE) run --rm --no-deps -v "$(CURDIR)/scripts:/verification:ro" spark-master /opt/spark/bin/spark-submit --master spark://spark-master:7077 /verification/verify-analytics.py
+
+analytics-reference-check:
+	$(ANALYTICS_COMPOSE) run --rm --no-deps -v "$(CURDIR)/scripts:/verification:ro" spark-master /opt/spark/bin/spark-submit --master spark://spark-master:7077 /verification/verify-analytics.py --reference-only
+
+.PHONY: analytics-import-retail analytics-real analytics-retention-plan analytics-retention-apply analytics-benchmark
+analytics-import-retail:
+	$(BIN)/python -m marketplace_data.retail_import --download
+
+# Separate volumes, ports and historical observation date: never mix with generated data.
+analytics-real:
+	ANALYTICS_WEB_PORT=24273 ANALYTICS_TRINO_PORT=24286 $(MAKE) analytics-up ANALYTICS_PROJECT=marketplace-lakehouse-retail
+	$(MAKE) analytics-retail-publish ANALYTICS_PROJECT=marketplace-lakehouse-retail
+
+analytics-retail-publish:
+	$(ANALYTICS_COMPOSE) run --rm --no-deps -v "$(CURDIR)/data/retail:/import:ro" spark-master python3 -m marketplace_data.purchase_source --input /import/purchases.jsonl --rate 2000
+	$(MAKE) analytics-refresh ANALYTICS_ARGS="--as-of 2011-12-09 --public-dataset"
+
+analytics-retention-plan:
+	$(ANALYTICS_COMPOSE) run --rm --no-deps -v "$(CURDIR)/scripts:/verification:ro" spark-master /opt/spark/bin/spark-submit --master spark://spark-master:7077 /verification/analytics-retention.py
+
+analytics-retention-apply:
+	$(ANALYTICS_COMPOSE) run --rm --no-deps -v "$(CURDIR)/scripts:/verification:ro" spark-master /opt/spark/bin/spark-submit --master spark://spark-master:7077 /verification/analytics-retention.py --apply
+
+analytics-compaction-plan:
+	$(ANALYTICS_COMPOSE) run --rm --no-deps -v "$(CURDIR)/scripts:/verification:ro" spark-master /opt/spark/bin/spark-submit --master spark://spark-master:7077 /verification/analytics-retention.py --compact
+
+analytics-compact:
+	$(ANALYTICS_COMPOSE) run --rm --no-deps -v "$(CURDIR)/scripts:/verification:ro" spark-master /opt/spark/bin/spark-submit --master spark://spark-master:7077 /verification/analytics-retention.py --compact --apply
+
+analytics-benchmark:
+	$(BIN)/python scripts/benchmark-analytics.py $(BENCHMARK_ARGS)
 
 .PHONY: showcase showcase-advance showcase-verify showcase-stop
 showcase:
@@ -72,7 +135,7 @@ compose-validate:
 	docker compose config --quiet
 	docker compose -f docker-compose.yml -f docker-compose.showcase.yml config --quiet
 
-check: lint type python-test compose-validate architecture-check
+check: lint type python-test compose-validate architecture-check security
 
 up:
 	docker compose up -d --build --wait postgres minio iceberg-rest kafka schema-registry spark-master spark-worker

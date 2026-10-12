@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from pyspark.sql import SparkSession
+from pyspark.sql import functions as F
 
 from marketplace_data.transforms.gold import daily_marketplace_kpis, demand_features
 
@@ -30,6 +31,7 @@ def test_daily_kpis_use_fixed_precision_and_business_status(spark: SparkSession)
         ],
         ["order_id", "seller_id", "market", "gross_amount", "status", "created_at"],
     )
+    orders = orders.withColumn("currency", F.lit("EUR"))
     row = daily_marketplace_kpis(orders).first()
 
     assert row.order_count == 2
@@ -37,6 +39,13 @@ def test_daily_kpis_use_fixed_precision_and_business_status(spark: SparkSession)
     assert row.net_revenue == Decimal("10.00")
     assert row.cancelled_orders == 1
     assert row.cancellation_rate == Decimal("0.500000")
+    currencies = daily_marketplace_kpis(
+        orders.unionByName(orders.withColumn("currency", F.lit("USD")))
+    ).collect()
+    assert {item.currency: item.gmv for item in currencies} == {
+        "EUR": Decimal("15.00"),
+        "USD": Decimal("15.00"),
+    }
 
 
 def test_seller_tier_and_demand_features(spark: SparkSession) -> None:
@@ -54,7 +63,12 @@ def test_seller_tier_and_demand_features(spark: SparkSession) -> None:
         ["order_id", "seller_id", "market", "gross_amount", "status", "created_at"],
     )
     sellers = spark.createDataFrame([("s1", "PREMIUM")], ["seller_id", "seller_tier"])
-    assert daily_marketplace_kpis(orders, sellers).first().seller_tier == "PREMIUM"
+    assert (
+        daily_marketplace_kpis(orders.withColumn("currency", F.lit("EUR")), sellers)
+        .first()
+        .seller_tier
+        == "PREMIUM"
+    )
 
     order_lines = spark.createDataFrame(
         [

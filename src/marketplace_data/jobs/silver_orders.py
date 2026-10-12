@@ -49,7 +49,18 @@ def main(argv: list[str] | None = None) -> None:
         rows_read = bronze.count()
         rows_written = orders.count()
         if not args.dry_run:
-            repository.merge(orders, "silver", "orders", ["order_id"])
+            repository.merge(
+                orders,
+                "silver",
+                "orders",
+                ["order_id"],
+                version_columns=[
+                    "producer_sequence",
+                    "updated_at",
+                    "source_partition",
+                    "source_offset",
+                ],
+            )
             repository.merge(history, "silver", "order_status_history", ["event_id"])
             repository.merge(order_lines, "silver", "order_lines", ["event_id"])
             snapshot = repository.current_snapshot_id("silver", "orders")

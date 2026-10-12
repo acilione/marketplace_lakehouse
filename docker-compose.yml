@@ -7,6 +7,7 @@ x-common-env: &common-env
   MLH_CATALOG__ACCESS_KEY: ${DEV_MINIO_ROOT_USER:-marketplace_local}
   MLH_CATALOG__SECRET_KEY: ${DEV_MINIO_ROOT_PASSWORD:-change-me-local-minio-password}
   MLH_METRICS_DIRECTORY: /var/lib/marketplace/metrics
+  ANALYTICS_CONTROL_DSN: host=postgres dbname=postgres user=${DEV_POSTGRES_USER:-marketplace_local} password=${DEV_POSTGRES_PASSWORD:-change-me-local-postgres-password}
 
 x-spark-common: &spark-common
   build:
@@ -227,6 +228,8 @@ services:
     volumes:
       - ./infrastructure/trino/catalog:/etc/trino/catalog:ro
       - ./infrastructure/trino/access-control.properties:/etc/trino/access-control.properties:ro
+      - ./infrastructure/trino/resource-groups.properties:/etc/trino/resource-groups.properties:ro
+      - ./infrastructure/trino/resource-groups.json:/etc/trino/resource-groups.json:ro
     environment:
       DEV_MINIO_ROOT_USER: ${DEV_MINIO_ROOT_USER:-marketplace_local}
       DEV_MINIO_ROOT_PASSWORD: ${DEV_MINIO_ROOT_PASSWORD:-change-me-local-minio-password}
@@ -309,6 +312,7 @@ services:
         airflow users create --username "$${AIRFLOW_ADMIN}" --password "$${AIRFLOW_PASSWORD}" \
           --firstname Local --lastname Admin --role Admin --email admin@example.invalid || true
     environment: &airflow-env
+      <<: *common-env
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
@@ -393,6 +397,10 @@ services:
       ICEBERG_REST_URL: http://iceberg-rest:8181
       KAFKA_BROKER: kafka:9092
       TRINO_URL: http://trino:8080
+      PGHOST: postgres
+      PGDATABASE: postgres
+      PGUSER: ${DEV_POSTGRES_USER:-marketplace_local}
+      PGPASSWORD: ${DEV_POSTGRES_PASSWORD:-change-me-local-postgres-password}
     depends_on:
       service-controller:
         condition: service_healthy

@@ -2,6 +2,23 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypt
 import type { IncomingMessage } from "node:http";
 
 export interface Identity { readonly user: string; readonly role: "operator" | "viewer" }
+export interface GuestIdentity { readonly user: "guest"; readonly role: "guest" }
+
+/** Only the verified showcase and its access status may be read anonymously. */
+export function authorizeRequest(
+  request: Pick<IncomingMessage, "headers">,
+  method: string,
+  pathname: string,
+): Identity | GuestIdentity | null {
+  const identity = authenticate(request);
+  if (identity) return identity;
+  if (
+    process.env.DASHBOARD_PUBLIC_SHOWCASE === "true" &&
+    method === "GET" &&
+    ["/api/session", "/api/analytics"].includes(pathname)
+  ) return { user: "guest", role: "guest" };
+  return null;
+}
 const sessionKey = randomBytes(32);
 const sessionSeconds = 8 * 60 * 60;
 const secure = process.env.AUTH_SECURE_COOKIE === "true";

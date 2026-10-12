@@ -47,15 +47,15 @@ def conform_orders(bronze: DataFrame) -> DataFrame:
     """Return one latest row per order using the documented total ordering."""
     typed = _typed_order_events(bronze)
     order = Window.partitionBy("order_id").orderBy(
-        F.col("updated_at").desc(),
         F.col("producer_sequence").desc(),
+        F.col("updated_at").desc(),
         F.col("source_partition").desc(),
         F.col("source_offset").desc(),
     )
     return (
         typed.withColumn("_rank", F.row_number().over(order))
         .where(F.col("_rank") == 1)
-        .drop("_rank", "producer_sequence")
+        .drop("_rank")
     )
 
 

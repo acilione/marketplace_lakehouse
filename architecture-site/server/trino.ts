@@ -37,7 +37,7 @@ async function cancelQuery(nextUri: string): Promise<void> {
   }
 }
 
-export async function executeQuery(sql: string): Promise<QueryResult> {
+export async function executeQuery(sql: string, workload: "interactive" | "exploration" = "exploration"): Promise<QueryResult> {
   const started = performance.now();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), queryTimeoutMs);
@@ -53,8 +53,9 @@ export async function executeQuery(sql: string): Promise<QueryResult> {
       headers: {
         "Content-Type": "text/plain; charset=utf-8",
         "X-Trino-Catalog": "lakehouse",
-        "X-Trino-Source": "marketplace-dashboard",
+        "X-Trino-Source": `marketplace-${workload}`,
         "X-Trino-User": "dashboard",
+        "X-Trino-Session": "query_max_execution_time=25s,query_max_scan_physical_bytes=1GB",
       },
     },
   };
@@ -108,7 +109,7 @@ export async function getCatalog(): Promise<readonly { namespace: string; tables
 
 export async function getOverview(): Promise<{
   readonly metrics: Record<string, number>;
-  readonly markets: readonly { market: string; orders: number; gmv: number }[];
+  readonly markets: readonly { market: string; currency: string; orders: number; gmv: number }[];
 }> {
   const counts = await executeQuery(`
     SELECT
@@ -118,10 +119,10 @@ export async function getOverview(): Promise<{
       (SELECT count(*) FROM lakehouse.gold.daily_marketplace_kpis) AS gold_rows
   `);
   const markets = await executeQuery(`
-    SELECT market, sum(order_count) AS orders, CAST(sum(gmv) AS DOUBLE) AS gmv
+    SELECT market, sum(order_count) AS orders, CAST(sum(gmv) AS DOUBLE) AS gmv, currency
     FROM lakehouse.gold.daily_marketplace_kpis
-    GROUP BY market
-    ORDER BY market
+    GROUP BY market, currency
+    ORDER BY market, currency
   `);
   const first = counts.rows[0] ?? [];
   return {
@@ -131,6 +132,6 @@ export async function getOverview(): Promise<{
       silverOrders: Number(first[2] ?? 0),
       goldRows: Number(first[3] ?? 0),
     },
-    markets: markets.rows.map((row) => ({ market: String(row[0]), orders: Number(row[1]), gmv: Number(row[2]) })),
+    markets: markets.rows.map((row) => ({ market: String(row[0]), orders: Number(row[1]), gmv: Number(row[2]), currency: String(row[3] ?? "Unclassified") })),
   };
 }

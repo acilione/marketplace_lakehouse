@@ -1,8 +1,11 @@
 # Transitive runtime constraints for the application image. Update through the compatibility suite.
 annotated-types==0.8.0
 confluent-kafka==2.15.0
+defusedxml==0.7.1
 fastavro==1.12.2
 prometheus-client==0.26.0
+psycopg==3.3.6
+psycopg-binary==3.3.6
 pydantic==2.13.5
 pydantic-core==2.46.5
 pydantic-settings==2.15.0

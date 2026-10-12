@@ -2,6 +2,33 @@ rule_files:
   - alerts.yml
 evaluation_interval: 30s
 tests:
+  - interval: 1m
+    input_series:
+      - series: 'marketplace_pipeline_last_success_seconds{pipeline="customer_analytics_v1"}'
+        values: '1+0x40'
+      - series: 'marketplace_pipeline_rejected_snapshots{pipeline="customer_analytics_v1"}'
+        values: '3+0x40'
+    alert_rule_test:
+      - eval_time: 37m
+        alertname: AnalyticsRefreshStale
+        exp_alerts:
+          - exp_labels:
+              pipeline: customer_analytics_v1
+              severity: warning
+              owner: data-platform
+            exp_annotations:
+              summary: Customer analytics has not refreshed successfully for thirty minutes
+              runbook_url: docs/analytics-operations.md
+      - eval_time: 2m
+        alertname: AnalyticsSnapshotsRejected
+        exp_alerts:
+          - exp_labels:
+              pipeline: customer_analytics_v1
+              severity: warning
+              owner: data-operations
+            exp_annotations:
+              summary: Purchase snapshots require source correction
+              runbook_url: docs/analytics-operations.md
   - interval: 30s
     input_series:
       - series: 'marketplace_pipeline_last_quality_failure_seconds{pipeline="test"}'

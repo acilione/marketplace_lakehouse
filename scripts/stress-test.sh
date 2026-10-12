@@ -103,7 +103,7 @@ run_phase domains_seconds \
   --config "$CONFIG" --run-id "${RUN_ID}_domains"
 run_phase customers_seconds \
   "${SUBMIT[@]}" /opt/marketplace/apps/silver_conform/customers.py \
-  --config "$CONFIG" --run-id "${RUN_ID}_customers"
+  --config "$CONFIG" --run-id "${RUN_ID}_customers" --full-rebuild
 run_phase gold_seconds \
   "${SUBMIT[@]}" /opt/marketplace/apps/gold_marts/marketplace_kpis.py \
   --config "$CONFIG" \

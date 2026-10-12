@@ -13,20 +13,13 @@ services:
   spark-worker:
     ports: !reset []
   trino:
-    ports: !override ["127.0.0.1:24186:8080"]
+    ports: !override ["127.0.0.1:${ANALYTICS_TRINO_PORT:-24186}:8080"]
   architecture-site:
-    ports: !override ["127.0.0.1:24173:8080"]
+    ports: !override ["127.0.0.1:${ANALYTICS_WEB_PORT:-24173}:8080"]
   control-api:
     environment:
-      SHOWCASE_REPORT: /showcase/latest.json
-      CASE_DATABASE: /case-data/cases.sqlite
       HIDE_SERVICE_LINKS: "true"
-    volumes:
-      - ./artifacts/showcase:/showcase:ro
-      - showcase-cases:/case-data
+      DASHBOARD_PUBLIC_SHOWCASE: ${DASHBOARD_PUBLIC_SHOWCASE:-true}
   service-controller:
     environment:
-      COMPOSE_PROJECT_NAME: marketplace-lakehouse-showcase
-
-volumes:
-  showcase-cases:
+      COMPOSE_PROJECT_NAME: ${ANALYTICS_PROJECT:-marketplace-lakehouse-showcase}

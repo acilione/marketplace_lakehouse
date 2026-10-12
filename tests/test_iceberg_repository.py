@@ -2,7 +2,7 @@ from unittest.mock import MagicMock
 
 from pyspark.sql import SparkSession
 
-from marketplace_data.iceberg import IcebergRepository
+from marketplace_data.iceberg import IcebergRepository, version_guard
 
 
 def test_current_snapshot_reads_main_not_newer_candidate(spark: SparkSession) -> None:
@@ -24,3 +24,16 @@ def test_replace_all_deletes_obsolete_rows_atomically(spark: SparkSession) -> No
     writer.assert_called_once_with("lakehouse.silver.customers_scd2")
     writer.return_value.overwrite.assert_called_once()
     source.unpersist.assert_called_once()
+
+
+def test_version_guard_is_strict_and_rejects_sql_identifiers() -> None:
+    import pytest
+
+    guard = version_guard(["version", "updated_at"])
+    assert "source.version > target.version" in guard
+    assert "source.version <=> target.version" in guard
+    assert ">=" not in guard
+    with pytest.raises(ValueError):
+        version_guard([])
+    with pytest.raises(ValueError):
+        version_guard(["version; DROP TABLE orders"])

@@ -1,5 +1,8 @@
 # Control Tower: design and verification
 
+Archived prototype: the UI and case API have been removed. These historical notes are not current
+run instructions. Use the root README and `docs/analytics-operations.md` for the analytics platform.
+
 ## Scope and data provenance
 
 This slice covers **confirmed order → payment capture → reconciliation → investigation**.
@@ -14,7 +17,7 @@ There are two explicitly separate modes:
 | --- | --- | --- |
 | Source | Locally generated events sent through the real lakehouse | Deterministic TypeScript fixtures |
 | Ingestion | Kafka → Spark Bronze → Silver → quality-gated Gold | None |
-| Read path | Authenticated API → Trino → pinned Iceberg snapshots | Browser memory |
+| Read path | Scoped read-only showcase API → Trino → pinned Iceberg snapshots | Browser memory |
 | Case state | SQLite in a Docker volume; authenticated operator actions | Validated browser localStorage; Demo operator |
 | Update | Completed and verified run/batch; status polled every five seconds | Explicit Receive next batch |
 | Outage | Visible error, no fixture substitution | No backend needed for case views |
@@ -80,7 +83,8 @@ Stopping during a job does not publish partial results. Retry a failed initial r
 
 The browser polls sequentially rather than overlapping requests. Cleanup aborts its fetch and
 timer. Failed refreshes show an error alongside the last loaded data and disable investigation
-writes until refresh succeeds. Expired sessions return to sign-in. There is no automatic switch to
+writes until refresh succeeds. Expired sessions fall back to read-only showcase access when enabled,
+or return to sign-in when public access is disabled. There is no automatic switch to
 Preview or synthetic fallback.
 
 ## Reconciliation semantics
@@ -127,7 +131,15 @@ server, never accepted from a client-supplied actor field.
 - Dismiss with explanation; dismissal has no verified cause.
 - Reopen a closed case with a reason; retain earlier history and clear the current cause.
 
-GET endpoints require a session. Case actions additionally require operator role and the dashboard
+The isolated showcase enables `DASHBOARD_PUBLIC_SHOWCASE=true` by default. Only `GET /api/session`
+and `GET /api/showcase` accept unauthenticated requests, with a guest identity that cannot mutate
+anything. This includes the published evidence and saved investigation history; do not enable it
+for confidential data. Set the flag to `false` and recreate the API to require login everywhere.
+The base-stack configuration does not enable public access. The UI opens without a login prompt,
+offers optional sign-in for editing, and returns to read-only access after sign-out. Platform tools
+still require an authenticated session. No password is stored in frontend code.
+
+Other GET endpoints require a session. Case actions additionally require operator role and the dashboard
 request header. Viewer controls are disabled in React and forbidden on the server.
 The existing signed HttpOnly session cookie, SameSite policy and authentication configuration
 remain in use. Credentials are documented in the README and must not be used beyond local development.
@@ -163,7 +175,8 @@ make python-test
 make showcase
 ```
 
-1. Open http://localhost:24173/?mode=pipeline and sign in as operator.
+1. Open http://localhost:24173/?mode=pipeline: cases must be visible without signing in.
+   Use **Sign in to edit** to sign in as operator before testing investigation changes.
 2. Confirm the Pipeline tab shows all stages complete and a verified publication.
 3. Confirm 32 analysed orders, 12 open cases and eight high-priority cases.
 4. Expand an event: inspect the real topic, partition and offset; compare with receipts/SQL.

@@ -30,7 +30,7 @@ interface Overview {
     readonly silverOrders: number;
     readonly goldRows: number;
   };
-  readonly markets: readonly { readonly market: string; readonly orders: number; readonly gmv: number }[];
+  readonly markets: readonly { readonly market: string; readonly currency: string; readonly orders: number; readonly gmv: number }[];
 }
 
 interface CatalogNamespace {
@@ -219,10 +219,10 @@ export function OperationsDashboard({ canControl = false }: { canControl?: boole
               </div>
               <div className="market-chart" aria-label="Gross merchandise value by market">
                 {overview.markets.map((market) => (
-                  <div className="market-bar" key={market.market}>
+                  <div className="market-bar" key={`${market.market}-${market.currency}`}>
                     <span>{market.market}</span>
                     <div><i style={{ width: `${Math.max(4, (market.gmv / maxGmv) * 100)}%` }} /></div>
-                    <strong>€{formatNumber(market.gmv)}</strong>
+                    <strong>{market.currency} {formatNumber(market.gmv)}</strong>
                   </div>
                 ))}
               </div>

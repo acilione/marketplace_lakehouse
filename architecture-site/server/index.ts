@@ -1,12 +1,11 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 
 import { inspectService, setServiceState } from "./controller-client.js";
-import { allowLogin, authenticate, clearSessionCookie, login, revokeSession, sessionCookie, validateAuthConfiguration } from "./auth.js";
+import { allowLogin, authenticate, authorizeRequest, clearSessionCookie, login, revokeSession, sessionCookie, validateAuthConfiguration } from "./auth.js";
 import { getKafkaTopics, getRecentKafkaEvents, shutdownKafka } from "./kafka.js";
 import { findService, normalizeReadOnlySql, services } from "./policy.js";
 import { executeQuery, getCatalog, getOverview } from "./trino.js";
-import { cases, getShowcase } from "./showcase.js";
-import { CaseError } from "./cases.js";
+import { getAnalytics, AnalyticsError } from "./analytics.js";
 
 const port = Number(process.env.PORT ?? 8081);
 const maximumBodyBytes = 16 * 1024;
@@ -69,7 +68,7 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
     sendJson(response, 200, identity);
     return;
   }
-  const identity = authenticate(request);
+  const identity = authorizeRequest(request, method, url.pathname);
   if (!identity) throw new HttpError(401, "Sign in to access the lakehouse dashboard.");
   if (method === "GET" && url.pathname === "/api/session") {
     sendJson(response, 200, identity); return;
@@ -89,16 +88,8 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
     sendJson(response, 200, { namespaces: await getCatalog() });
     return;
   }
-  if (method === "GET" && url.pathname === "/api/showcase") {
-    sendJson(response, 200, await getShowcase()); return;
-  }
-  if (method === "POST" && url.pathname === "/api/showcase/cases") {
-    requireDashboardRequest(request);
-    if (identity.role !== "operator") throw new HttpError(403, "Only operators can update cases.");
-    const body = await readJson(request);
-    if (typeof body.runId !== "string" || !/^[a-f0-9]{32}$/.test(body.runId) || typeof body.caseId !== "string")
-      throw new HttpError(400, "A run and case identifier are required.");
-    sendJson(response, 200, { work: cases().act(body.runId, body.caseId, body.revision as number, body.action, identity.user) });
+  if (method === "GET" && url.pathname === "/api/analytics") {
+    sendJson(response, 200, await getAnalytics(url.searchParams, identity.role === "guest"));
     return;
   }
   if (method === "GET" && url.pathname === "/api/overview") {
@@ -175,7 +166,7 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
 
 const server = createServer((request, response) => {
   void route(request, response).catch((error: unknown) => {
-    const status = error instanceof HttpError || error instanceof CaseError ? error.status : 500;
+    const status = error instanceof HttpError || error instanceof AnalyticsError ? error.status : 500;
     const message = error instanceof Error ? error.message : "Unexpected control API failure.";
     console.error(JSON.stringify({ level: "error", actor: authenticate(request)?.user ?? "anonymous", method: request.method, path: request.url, status, message }));
     sendJson(response, status, { error: message });

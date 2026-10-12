@@ -11,12 +11,12 @@ def daily_marketplace_kpis(orders: DataFrame, sellers: DataFrame | None = None) 
     if sellers is None:
         enriched = enriched.withColumn("seller_tier", F.lit("UNCLASSIFIED"))
     else:
-        enriched = enriched.join(F.broadcast(sellers), "seller_id", "left").fillna(
+        enriched = enriched.join(sellers, "seller_id", "left").fillna(
             {"seller_tier": "UNCLASSIFIED"}
         )
 
     grouped = enriched.groupBy(
-        F.to_date("created_at").alias("metric_date"), "market", "seller_tier"
+        F.to_date("created_at").alias("metric_date"), "market", "seller_tier", "currency"
     ).agg(
         F.count("order_id").cast("long").alias("order_count"),
         F.sum("gross_amount").cast("decimal(38,2)").alias("gmv"),

@@ -17,7 +17,7 @@ COPY config/ config/
 COPY contracts/ contracts/
 COPY quality/ quality/
 COPY docker/spark/metrics.properties /opt/spark/conf/metrics.properties
-RUN python3 -m pip install --no-cache-dir --constraint requirements/runtime.lock . && \
+RUN python3 -m pip install --no-cache-dir --timeout 120 --retries 5 --constraint requirements/runtime.lock . && \
     mkdir -p /var/lib/marketplace/metrics && chown -R 185:0 /var/lib/marketplace && \
     chown -R 185:0 /opt/marketplace && chmod -R g=u /opt/marketplace
 

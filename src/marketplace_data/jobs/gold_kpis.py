@@ -29,7 +29,7 @@ def main(argv: list[str] | None = None) -> None:
     try:
         checks = [
             non_null(kpis, "metric_date"),
-            unique(kpis, ["metric_date", "market", "seller_tier"]),
+            unique(kpis, ["metric_date", "market", "seller_tier", "currency"]),
             non_negative(kpis, "gmv"),
             non_negative(kpis, "net_revenue"),
         ]
@@ -43,7 +43,11 @@ def main(argv: list[str] | None = None) -> None:
                 # A branch-qualified identifier guarantees this write cannot
                 # mutate the certified main reference before quality promotion.
                 write_target = f"{target}.branch_{branch}"
-            kpis.writeTo(write_target).overwritePartitions()
+            # This recovery/reference job computes the full table. Include empty
+            # groups in the replacement, otherwise removed orders leave stale KPIs.
+            from pyspark.sql import functions as F
+
+            kpis.writeTo(write_target).overwrite(F.lit(True))
             if args.publish and published_snapshot is not None:
                 repository.fast_forward("gold", "daily_marketplace_kpis", branch)
     finally:

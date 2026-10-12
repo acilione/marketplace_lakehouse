@@ -13,6 +13,6 @@
     "rootDir": ".",
     "outDir": "server-dist"
   },
-  "include": ["server/**/*.ts", "shared/**/*.ts"],
+  "include": ["server/**/*.ts"],
   "exclude": ["server/**/*.test.ts"]
 }
