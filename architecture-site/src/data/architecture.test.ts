@@ -49,7 +49,7 @@ describe("architecture model", () => {
 
 describe("control tower document", () => {
   it("renders a labelled synthetic workspace without a backend or browser storage", () => {
-    const html = renderToStaticMarkup(createElement(App));
+    const html = renderToStaticMarkup(createElement(App, { mode: "preview" }));
 
     expect(html).toContain("Reconciliation");
     expect(html).toContain("Synthetic data");

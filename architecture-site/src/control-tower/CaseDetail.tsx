@@ -12,7 +12,7 @@ import {
   type Finding,
   type Owner,
 } from "./model";
-import { dateTime } from "./format";
+import { dateTime, displayIdentifier } from "./format";
 import { Icon, Badge, CaseStatusBadge } from "./ui";
 
 const eventLabels = {
@@ -27,16 +27,19 @@ export function CaseDetail({
   signalPresent,
   currentEvidence,
   onAction,
+  canEdit = true,
 }: {
   finding: Finding;
   work: CaseWork;
   signalPresent: boolean;
   currentEvidence: Finding["evidence"];
-  onAction: (action: Action) => void;
+  onAction: (action: Action) => void | Promise<void>;
+  canEdit?: boolean;
 }) {
   const [detailTab, setDetailTab] = useState("evidence");
   const [note, setNote] = useState("");
   const [cause, setCause] = useState<Cause | "">("");
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const closed = work.status === "resolved" || work.status === "dismissed";
   const currentCapture =
@@ -44,15 +47,19 @@ export function CaseDetail({
   const evidence = [...currentEvidence].sort((a, b) =>
     a.occurredAt.localeCompare(b.occurredAt),
   );
-  function submit(action: Action) {
+  async function submit(action: Action) {
+    if (busy || !canEdit) return;
+    setBusy(true);
     try {
-      onAction(action);
+      await onAction(action);
       setError("");
       if ("note" in action) setNote("");
     } catch (caught) {
       setError(
         caught instanceof Error ? caught.message : "Unable to update case.",
       );
+    } finally {
+      setBusy(false);
     }
   }
   return (
@@ -66,7 +73,9 @@ export function CaseDetail({
           <span className="ct-mono">R{String(finding.order.id.slice(-3))}</span>
         </div>
         <div>
-          <h2>{finding.order.id}</h2>
+          <h2 title={finding.order.id}>
+            {displayIdentifier(finding.order.id)}
+          </h2>
           <CaseStatusBadge work={work} />
         </div>
         <p>
@@ -159,7 +168,10 @@ export function CaseDetail({
                     </div>
                     <p>
                       {money(minorUnits(event.amount), event.currency)}{" "}
-                      <span>·</span> {event.paymentId ?? finding.order.id}
+                      <span>·</span>{" "}
+                      <span title={event.paymentId ?? finding.order.id}>
+                        {displayIdentifier(event.paymentId ?? finding.order.id)}
+                      </span>
                     </p>
                     <details>
                       <summary>
@@ -168,12 +180,20 @@ export function CaseDetail({
                       <dl>
                         <dt>Event ID</dt>
                         <dd>{event.id}</dd>
+                        <dt>Order ID</dt>
+                        <dd>{event.orderId}</dd>
+                        {event.paymentId && (
+                          <>
+                            <dt>Payment ID</dt>
+                            <dd>{event.paymentId}</dd>
+                          </>
+                        )}
                         <dt>Occurred</dt>
                         <dd>{dateTime(event.occurredAt)} UTC</dd>
                         <dt>Received</dt>
                         <dd>{dateTime(event.receivedAt)} UTC</dd>
                         <dt>Partition</dt>
-                        <dd>0 (synthetic)</dd>
+                        <dd>{event.partition ?? "0 (preview)"}</dd>
                       </dl>
                     </details>
                   </div>
@@ -193,7 +213,15 @@ export function CaseDetail({
             </button>
           </>
         ) : (
-          <>
+          <fieldset
+            className="ct-investigation-form"
+            disabled={busy || !canEdit}
+          >
+            {!canEdit && (
+              <p className="ct-muted">
+                Viewer access · sign in as operator to update cases.
+              </p>
+            )}
             <div className="ct-investigation-fields">
               <label>
                 Owner
@@ -232,7 +260,7 @@ export function CaseDetail({
                 <span>
                   Recorded cause: {CAUSES[work.cause]}
                   <small>
-                    Verified by the demo operator, not inferred by the rules.
+                    Recorded by the operator, not inferred by the rules.
                   </small>
                 </span>
               </div>
@@ -329,7 +357,7 @@ export function CaseDetail({
             ) : (
               <p className="ct-muted">No actions recorded for this case.</p>
             )}
-          </>
+          </fieldset>
         )}
       </div>
       <div className="ct-detail-footer">

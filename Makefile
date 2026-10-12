@@ -1,6 +1,7 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
 PYTHON ?= python3
+.DEFAULT_GOAL := bootstrap
 VENV ?= .venv
 BIN := $(VENV)/bin
 ARCHITECTURE_NODE_IMAGE := node:24.20.0-alpine@sha256:e67514e5d0f6c46656005e1b693b2ec9d52e80b641307de684d4a015ba7a4eaf
@@ -11,6 +12,18 @@ SIMULATION_ARGS ?=
 STRESS_PROFILE ?= steady
 STRESS_SEED ?= $(shell date -u +%s)
 STRESS_ARGS ?=
+SHOWCASE_CONFIG ?= config/showcase.json
+SHOWCASE_ARGS ?=
+
+.PHONY: showcase showcase-advance showcase-verify showcase-stop
+showcase:
+	$(PYTHON) scripts/showcase.py run --config "$(SHOWCASE_CONFIG)" $(SHOWCASE_ARGS)
+showcase-advance:
+	$(PYTHON) scripts/showcase.py advance $(SHOWCASE_ARGS)
+showcase-verify:
+	$(PYTHON) scripts/showcase.py verify
+showcase-stop:
+	$(PYTHON) scripts/showcase.py stop
 
 .PHONY: bootstrap install format lint type python-test test security check compose-validate up down demo simulate stress clean architecture-install architecture-test architecture-check architecture-audit architecture-up dashboard-up dashboard-down
 
@@ -57,6 +70,7 @@ security: architecture-audit
 
 compose-validate:
 	docker compose config --quiet
+	docker compose -f docker-compose.yml -f docker-compose.showcase.yml config --quiet
 
 check: lint type python-test compose-validate architecture-check
 

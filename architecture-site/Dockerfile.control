@@ -5,6 +5,7 @@ COPY package.json package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci --ignore-scripts --no-audit --no-fund
 COPY tsconfig.server.json ./
 COPY server/ server/
+COPY shared/ shared/
 RUN npm run build:server
 
 FROM node:24.20.0-alpine@sha256:e67514e5d0f6c46656005e1b693b2ec9d52e80b641307de684d4a015ba7a4eaf
@@ -16,8 +17,9 @@ COPY package.json package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev --no-audit --no-fund
 COPY --from=build --chown=node:node /app/server-dist/ ./server-dist/
 
+RUN mkdir /case-data && chown node:node /case-data
 USER node
 EXPOSE 8081
 HEALTHCHECK --interval=10s --timeout=3s --retries=10 \
   CMD node -e "fetch('http://127.0.0.1:8081/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
-CMD ["node", "server-dist/index.js"]
+CMD ["node", "server-dist/server/index.js"]

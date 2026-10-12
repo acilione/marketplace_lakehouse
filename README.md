@@ -1,65 +1,128 @@
 # Marketplace Control Tower
 
-An order/payment reconciliation workspace backed by the Marketplace Lakehouse project. This branch
-implements the first product slice described in the control-tower idea: identify discrepancies,
-inspect event evidence, and record an investigation through to resolution.
+An order/payment reconciliation workspace backed by the Marketplace Lakehouse: inspect discrepancies,
+trace them to source events, and record investigations through to resolution.
 
-The default screen is a **self-contained synthetic workspace**, not a view of production transactions.
-It contains 64 orders across five markets and eight detected cases. No login, Kafka broker, Spark
-job or external API is needed to explore the case workflow. The **Platform** tab retains the existing
-authenticated live service controls, Kafka observer, catalog and SQL tools; these are separate from
-the synthetic case dataset. There is no live lakehouse-to-case ingestion adapter in this version.
+The default **Pipeline** mode reads verified lakehouse results, not frontend fixtures. **Preview**
+is a separate, browser-only mode for exploring the interface without starting infrastructure.
+The showcase still generates its source events locally: it is not connected to a real marketplace
+or payment provider. Those inputs must pass through Kafka, Spark, Iceberg and Trino before they
+appear as cases.
 
-### Run the Control Tower
+### Start the end-to-end showcase
 
-From the repository root, with Docker and Docker Compose available:
+From the repository root on Linux or WSL, with Docker and Docker Compose 2.24.4 or newer:
 
 ```bash
 [ -f .env ] || cp .env.example .env
-make architecture-up
+make showcase
 ```
 
-Open <http://localhost:4173>. This starts only the website. Stop only the website with
-`docker compose --profile architecture stop architecture-site`.
+Open <http://localhost:24173/?mode=pipeline>. Sign in as `operator` using
+`DEV_DASHBOARD_OPERATOR_PASSWORD` from `.env` (example value:
+`change-me-local-operator-password`). The `viewer` account can inspect but not edit cases.
+The first run downloads/builds several large images and takes longer than subsequent runs.
+Start the command in a terminal; the website shows stage progress once its container is ready.
 
 ```bash
-# Lint, TypeScript checks, unit tests and production builds in the pinned Node container
-make architecture-check
+make showcase-advance  # Publish one delayed capture; rerun and verify the pipeline
+make showcase-verify   # Independently recheck stored evidence against Kafka delivery receipts
+make showcase-stop     # Stop only the isolated showcase; retain its data and case history
 ```
 
-For a development server, use Node.js 24.20.0 (the version used by the container):
+A fresh `make showcase` creates a new run; previous runs remain in the lakehouse and under
+`artifacts/showcase/<run-id>/`. The default 32 orders produce 93 acknowledged messages,
+92 unique accepted events and 12 discrepancy cases. Advancing adds one capture: 93 unique
+events, 11 active signals, and 12 retained investigations. These are expected scenario outcomes,
+not hard-coded dashboard counters. Adjust bounded inputs in [config/showcase.json](config/showcase.json)
+or use `make showcase SHOWCASE_CONFIG=path/to/config.json`.
+Use `SHOWCASE_ARGS=--no-build` only when local images already contain the current source.
+
+The Compose project `marketplace-lakehouse-showcase` has separate networks, storage volumes and
+checkpoints. It exposes the website on loopback port **24173** and Trino on loopback **24186**;
+Kafka and object storage stay internal. It does not reuse or stop a sibling project's stack.
+Pipeline mode displays only the latest run's verified snapshot; it is a bounded batch showcase,
+not an always-on production event subscription. Platform → Live tools includes Kafka arrivals,
+SQL queries, catalog and service controls for this isolated stack.
+
+### Preview the interface without the data platform
+
+```bash
+make architecture-up
+# Open http://localhost:4173/?mode=preview
+```
+
+Preview contains 64 generated orders and eight cases. It makes no pipeline API requests while
+browsing Cases, Overview or Activity. Its notes and assignments remain in this browser.
+The Preview selector is also available on the showcase website.
+
+### Control Tower architecture and implementation
+
+```mermaid
+flowchart LR
+  G[Showcase source generator] --> K[Kafka delivery acknowledgements]
+  K --> B[Spark Bronze ingestion]
+  B --> S[Silver orders and payments]
+  S --> M[Quality-gated Gold publication]
+  M --> V[Receipt-to-table verification]
+  V --> R[Pinned snapshot report]
+  R --> A[Authenticated Node API]
+  T[Trino / Iceberg] --> A
+  A --> E[Shared reconciliation engine]
+  E --> C[React case workspace]
+  C --> D[SQLite investigation history]
+  P[Explicit preview fixtures] --> F[Browser-only preview]
+```
+
+| Feature | Implementation |
+| --- | --- |
+| Full-pipeline showcase | Python orchestrator starts isolated Compose services, publishes acknowledged Kafka events, runs Spark jobs, and verifies Bronze IDs/content/source positions, Silver domain state and Gold aggregates through Trino. Atomic JSON reports contain stage status and verified Iceberg snapshot IDs. The input ledger is verification evidence, never the dashboard's case data source. |
+| Snapshot consistency | The Node adapter queries Bronze, Silver orders/payments and Gold using `FOR VERSION AS OF` with validated snapshot IDs. It checks counts, rejects truncation and cross-checks Silver state against Bronze evidence. A later run does not expose partially refreshed cases; errors never trigger a fixture fallback. |
+| Case detection | Shared pure TypeScript rules evaluate capture absence after 30 minutes, amount differences and currency mismatches. Findings have stable order/rule IDs. Detection and investigation state remain separate. |
+| Monetary correctness | Decimal strings are parsed through `BigInt` into safe integer minor units. EUR, GBP, USD and CHF use two decimal places. Unsafe values fail explicitly; unlike currencies are never netted or converted. Kafka offsets remain strings to avoid 64-bit precision loss. |
+| Evidence timeline | Confirmation, authorization, capture and full reversal records include business time, actual Bronze ingestion time, event/payment identifiers and Kafka topic/partition/offset. Preview provenance is explicitly labelled. |
+| Investigation lifecycle | New → In review → Resolved/Dismissed, with explicit reopening. Resolution requires an assigned owner, verified cause and substantive note. Server actions require an authenticated operator. SQLite transactions check the expected revision and append actor/time/history atomically; stale updates return HTTP 409. Viewers are read-only. |
+| Persistence | Pipeline case history lives in the `showcase-cases` Docker volume, separate from immutable lakehouse evidence. Original cases remain after signals clear, even when first opening the UI after the delayed batch. Preview uses validated versioned `localStorage` and a stale-tab guard. Neither store is presented as a compliance-grade immutable audit system. |
+| Minimal workspace | React 19, strict TypeScript and Vite; internally scrolling queue/detail panels, compact metrics, tabs and responsive CSS. No external chart/font/UI service. Five-second sequential polling refreshes pipeline status; unmounted requests are aborted. |
+| Overview and activity | Counts are derived from returned evidence and stored investigations. Current signals, open cases, completed reviews and operator-recorded causes are separate measures. Activity contains actual actions, not generated activity. |
+| Delayed evidence | `make showcase-advance` publishes a capture for the run's first missing-payment order and executes Bronze → Silver → Gold again. The UI updates after verification; the investigation is not automatically resolved. Preview's Receive next batch button remains a browser-only illustration. |
+| Search and export | Search order/seller/market/rule and filter status/priority. JSON exports identify their source and include snapshots, signal state, evidence and investigation history. Preview reset never deletes pipeline data. |
+| Platform tools | Same-origin Nginx → authenticated Node API → Trino / Iceberg REST / Kafka / private Docker controller. The showcase binds controls to its own Compose project. Unavailable services return errors rather than generated results. |
+
+React is organized by responsibility:
+
+- [App.tsx](architecture-site/src/App.tsx): mode selection and authenticated entry point.
+- [Workspace.tsx](architecture-site/src/control-tower/Workspace.tsx): tabs, selection, filters and export.
+- [usePipelineWorkspace.ts](architecture-site/src/control-tower/usePipelineWorkspace.ts): sequential polling, cancellation and server actions.
+- [usePreviewWorkspace.ts](architecture-site/src/control-tower/usePreviewWorkspace.ts): fixture lifecycle and browser persistence.
+- `CaseQueue`, `CaseDetail`, `Overview`, `Activity`, `ShowcaseRun` and `Platform`: focused views with typed props.
+- [shared/reconciliation.ts](architecture-site/shared/reconciliation.ts): rules, monetary validation and workflow transitions shared by browser/server.
+- [server/showcase.ts](architecture-site/server/showcase.ts): report validation, pinned Trino reads and retained-case materialization.
+- [server/cases.ts](architecture-site/server/cases.ts): transactional local SQLite repository using Node's built-in SQLite module.
+- [scripts/showcase.py](scripts/showcase.py) and [showcase.py](src/marketplace_data/showcase.py): orchestration/verification and source generation respectively.
+
+### Checks
+
+```bash
+make architecture-check  # ESLint, TypeScript tests, frontend and server production builds
+make lint type
+make python-test
+make showcase-verify    # Requires a completed showcase
+```
+
+For frontend development use the pinned Node.js 24.20.0 runtime:
 
 ```bash
 cd architecture-site
 npm ci
 npm run dev
-# Open http://localhost:5173
+# http://localhost:5173/?mode=preview (no backend required)
 ```
 
-### Control Tower features and implementation
-
-| Feature | Implementation |
-| --- | --- |
-| Single-page workspace | React 19 + strict TypeScript, built by Vite. Cases, Overview, Activity and Platform sections share one desktop viewport with internally scrolling panels; small screens use a stacked layout. CSS and inline SVG, system fonts, no external UI/chart/font service. |
-| Case detection | A pure TypeScript reconciliation engine evaluates actual synthetic order/payment evidence, not hard-coded alert counts. It checks capture absence after 30 minutes, mismatched amounts, and differing currencies. Stable order/rule identifiers keep investigation state separate from the detection signal. |
-| Monetary correctness | Decimal strings are parsed through `BigInt` into safe integer minor units. Active captures are summed by currency. The supported currencies are EUR, GBP and USD, each with two decimal places. Unsafe values fail explicitly; currencies are never converted or netted together. |
-| Evidence timeline | Confirmation, authorization, capture and full reversal events carry occurrence time, received time, event/payment identifiers, topic and offset. Expand an event to inspect its synthetic provenance. Duplicate event IDs are deduplicated; conflicting duplicates are rejected. |
-| Investigation lifecycle | New → In review → Resolved/Dismissed, with explicit reopening. Operators can assign a team and add notes. Resolution requires an owner, a recorded verified cause and a substantive note. A dismissal is not counted as a confirmed cause. |
-| Activity and persistence | Every successful change appends a revisioned action with time, actor and note. A versioned, validated `localStorage` document persists this demo in the current browser. Stale-tab writes are detected before saving; storage failures visibly fall back to memory. This is not a shared, immutable audit system. |
-| Overview | Current rule counts, open/high-priority cases, review completion and recorded causes are calculated from the dataset and investigation state. Counts distinguish an observed signal from an open workflow. No fabricated trends or production performance claims are shown. |
-| Late evidence simulation | **Overview → Receive next batch** receives one delayed capture for `ORD-10482`, advances the synthetic snapshot by five minutes and re-evaluates the rules. The signal clears while the case and its history remain available for review. No Kafka message is produced by this button. |
-| Search and export | Search order, seller, market or rule; filter status and priority. Export creates a JSON download containing the synthetic snapshot, triggering evidence, signal state and investigation histories. Reset asks for confirmation and clears only this demo workspace. |
-| Live platform tools | The existing same-origin Nginx → Node control API → Trino / Iceberg REST / Kafka / private Docker controller path remains available under Platform. It requires `make dashboard-up` and dashboard authentication; it never replaces missing live results with synthetic cases. |
-
-Source boundaries: [`model.ts`](architecture-site/src/control-tower/model.ts) owns rules and workflow
-transitions; [`demo.ts`](architecture-site/src/control-tower/demo.ts) owns the deterministic evidence;
-[`storage.ts`](architecture-site/src/control-tower/storage.ts) validates saved workspaces;
-[`App.tsx`](architecture-site/src/App.tsx) coordinates navigation, filters, persistence and summaries;
-[`CaseDetail.tsx`](architecture-site/src/control-tower/CaseDetail.tsx) renders evidence and investigation
-controls. Existing [`server/`](architecture-site/server/) modules own authenticated live operations.
-
-See [Control Tower design and acceptance checks](docs/control-tower.md) for the rule semantics,
-state boundaries, browser tests, a complete walkthrough and the requirements for a live deployment.
+See [Control Tower design and acceptance checks](docs/control-tower.md) for a full walkthrough,
+failure behavior, provenance and deployment limitations. This is a local single-workspace system;
+production requires real source connectors, per-user/tenant authorization, operational retention,
+backups, recovery tests and validated reconciliation policies.
 
 ## Lakehouse platform
 
@@ -75,7 +138,7 @@ This repository contains four complementary deliverables:
    resources, Terraform, monitoring rules, runbooks, and release evidence requirements.
 3. A localhost operations dashboard for service health and lifecycle control, Iceberg catalog
    discovery, certified metric visualization, and bounded read-only Trino queries.
-4. The Control Tower's bounded synthetic reconciliation and investigation workspace described above.
+4. The Control Tower's verified pipeline reconciliation workspace and independent browser preview.
 
 The local system is deliberately compact. It preserves the important data contracts, state
 boundaries, failure paths, and publication semantics, but it is not presented as a production-sized
@@ -496,8 +559,8 @@ and environment evidence; it is distinct from the end-to-end Kafka stress test.
 
 ### Website: Control Tower and operational dashboard
 
-[`App.tsx`](architecture-site/src/App.tsx) opens the synthetic reconciliation workspace described
-above. Its Platform tab contains a login-gated live control room and a separate Architecture view.
+[`App.tsx`](architecture-site/src/App.tsx) opens the authenticated pipeline workspace described
+above; `?mode=preview` selects the standalone fixture. Platform contains live tools and an Architecture view.
 [`ArchitectureMap`](architecture-site/src/components/ArchitectureMap.tsx) and
 [`DeploymentPanel`](architecture-site/src/components/DeploymentPanel.tsx) render typed static
 descriptions and change the selected stage/profile with React state. They do not infer architecture
@@ -915,10 +978,10 @@ docker compose exec grafana sh -ec \
 
 ## Run the architecture website
 
-The TypeScript website in [`architecture-site/`](architecture-site/) opens the Control Tower's
-synthetic case workspace. Its Platform tab includes the architecture explorer and local operations
-dashboard. Synthetic cases and architecture content work without the data platform; live service
-control, table discovery, metrics, and queries require the dashboard profile.
+The TypeScript website in [`architecture-site/`](architecture-site/) defaults to Pipeline mode.
+Use `make showcase` and port 24173 for pipeline-backed cases. The separate base-stack setup below
+supports general lakehouse operations on port 4173. Open `?mode=preview` there to browse the static
+case workspace and its Platform tab; preview case counts do not track base-stack demo/stress runs.
 
 Start the dashboard and its core platform with one command:
 
@@ -926,7 +989,7 @@ Start the dashboard and its core platform with one command:
 make dashboard-up
 ```
 
-Then open <http://localhost:4173>. This creates—but does not start—the optional Trino, Prometheus,
+Then open <http://localhost:4173/?mode=preview>. This creates—but does not start—the optional Trino, Prometheus,
 and Grafana containers so their lifecycle can be controlled from the page. The first Trino image
 download is large. Open **Platform → Live tools**, sign in, and run `make demo` once to populate
 the live platform metric cards and query results. This does not alter the separate synthetic cases

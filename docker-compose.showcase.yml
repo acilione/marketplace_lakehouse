@@ -1,0 +1,32 @@
+# Isolated state and ports for the complete, executable showcase.
+services:
+  minio:
+    ports: !reset []
+  iceberg-rest:
+    ports: !reset []
+  kafka:
+    ports: !reset []
+  schema-registry:
+    ports: !reset []
+  spark-master:
+    ports: !reset []
+  spark-worker:
+    ports: !reset []
+  trino:
+    ports: !override ["127.0.0.1:24186:8080"]
+  architecture-site:
+    ports: !override ["127.0.0.1:24173:8080"]
+  control-api:
+    environment:
+      SHOWCASE_REPORT: /showcase/latest.json
+      CASE_DATABASE: /case-data/cases.sqlite
+      HIDE_SERVICE_LINKS: "true"
+    volumes:
+      - ./artifacts/showcase:/showcase:ro
+      - showcase-cases:/case-data
+  service-controller:
+    environment:
+      COMPOSE_PROJECT_NAME: marketplace-lakehouse-showcase
+
+volumes:
+  showcase-cases:

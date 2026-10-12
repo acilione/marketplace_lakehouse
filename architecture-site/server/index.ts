@@ -5,6 +5,8 @@ import { allowLogin, authenticate, clearSessionCookie, login, revokeSession, ses
 import { getKafkaTopics, getRecentKafkaEvents, shutdownKafka } from "./kafka.js";
 import { findService, normalizeReadOnlySql, services } from "./policy.js";
 import { executeQuery, getCatalog, getOverview } from "./trino.js";
+import { cases, getShowcase } from "./showcase.js";
+import { CaseError } from "./cases.js";
 
 const port = Number(process.env.PORT ?? 8081);
 const maximumBodyBytes = 16 * 1024;
@@ -80,11 +82,23 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
   }
   if (method === "GET" && url.pathname === "/api/services") {
     const states = await Promise.all(services.map(inspectService));
-    sendJson(response, 200, { services: states, refreshedAt: new Date().toISOString() });
+    sendJson(response, 200, { services: process.env.HIDE_SERVICE_LINKS === "true" ? states.map(state => ({ ...state, url: undefined })) : states, refreshedAt: new Date().toISOString() });
     return;
   }
   if (method === "GET" && url.pathname === "/api/catalog") {
     sendJson(response, 200, { namespaces: await getCatalog() });
+    return;
+  }
+  if (method === "GET" && url.pathname === "/api/showcase") {
+    sendJson(response, 200, await getShowcase()); return;
+  }
+  if (method === "POST" && url.pathname === "/api/showcase/cases") {
+    requireDashboardRequest(request);
+    if (identity.role !== "operator") throw new HttpError(403, "Only operators can update cases.");
+    const body = await readJson(request);
+    if (typeof body.runId !== "string" || !/^[a-f0-9]{32}$/.test(body.runId) || typeof body.caseId !== "string")
+      throw new HttpError(400, "A run and case identifier are required.");
+    sendJson(response, 200, { work: cases().act(body.runId, body.caseId, body.revision as number, body.action, identity.user) });
     return;
   }
   if (method === "GET" && url.pathname === "/api/overview") {
@@ -161,7 +175,7 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
 
 const server = createServer((request, response) => {
   void route(request, response).catch((error: unknown) => {
-    const status = error instanceof HttpError ? error.status : 500;
+    const status = error instanceof HttpError || error instanceof CaseError ? error.status : 500;
     const message = error instanceof Error ? error.message : "Unexpected control API failure.";
     console.error(JSON.stringify({ level: "error", actor: authenticate(request)?.user ?? "anonymous", method: request.method, path: request.url, status, message }));
     sendJson(response, status, { error: message });

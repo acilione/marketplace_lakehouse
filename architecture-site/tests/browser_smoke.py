@@ -17,6 +17,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--url", default="http://127.0.0.1:4173")
     args = parser.parse_args()
+    preview_url = args.url.rstrip("/") + "/?mode=preview"
     output = Path("artifacts/control-tower")
     output.mkdir(parents=True, exist_ok=True)
     with sync_playwright() as playwright:
@@ -30,7 +31,7 @@ def main() -> None:
             "request",
             lambda request: api_requests.append(request.url) if "/api/" in request.url else None,
         )
-        page.goto(args.url)
+        page.goto(preview_url)
         expect(page.get_by_role("heading", name="Reconciliation", exact=True)).to_be_visible()
         expect(page.locator(".ct-metric").nth(0)).to_contain_text("64")
         expect(page.locator(".ct-table tbody tr")).to_have_count(8)
@@ -95,14 +96,14 @@ def main() -> None:
         report_path = output / "reconciliation.json"
         download_info.value.save_as(report_path)
         report = json.loads(report_path.read_text())
-        assert report["source"] == "synthetic"
+        assert report["source"] == "synthetic-preview"
         assert len(report["cases"]) == 8
         assert report["cases"][0]["signalPresent"] is False
         assert report["cases"][0]["work"]["status"] == "in_review"
 
         # A stale second tab must not overwrite another tab's saved workspace.
         second = context.new_page()
-        second.goto(args.url)
+        second.goto(preview_url)
         second.locator(".ct-detail-tabs").get_by_role("button", name="Investigation").click()
         page.locator(".ct-detail-tabs").get_by_role("button", name="Investigation").click()
         page.get_by_role("textbox", name="Investigation note").fill(
@@ -140,7 +141,7 @@ def main() -> None:
 
         isolated = browser.new_context()
         corrupt = isolated.new_page()
-        corrupt.goto(args.url)
+        corrupt.goto(preview_url)
         corrupt.evaluate("localStorage.setItem('marketplace-control-tower:demo:v1', 'broken')")
         corrupt.reload()
         expect(corrupt.get_by_role("status")).to_contain_text("Saved workspace unavailable")
@@ -149,7 +150,7 @@ def main() -> None:
 
         memory_context = browser.new_context()
         memory = memory_context.new_page()
-        memory.goto(args.url)
+        memory.goto(preview_url)
         memory.evaluate(
             "() => { Storage.prototype.setItem = () => { "
             "throw new DOMException('Full', 'QuotaExceededError'); }; }"

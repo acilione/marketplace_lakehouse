@@ -415,7 +415,7 @@ services:
       context: ./architecture-site
       dockerfile: Dockerfile.control
     profiles: [dashboard]
-    command: ["node", "server-dist/controller.js"]
+    command: ["node", "server-dist/server/controller.js"]
     restart: unless-stopped
     environment:
       COMPOSE_PROJECT_NAME: marketplace-lakehouse

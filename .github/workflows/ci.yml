@@ -45,7 +45,7 @@ jobs:
       - name: Dependency audit
         run: .venv/bin/pip-audit && make architecture-audit
       - name: Compose rendering
-        run: docker compose config --quiet
+        run: make compose-validate
       - name: Repository hygiene
         run: ./scripts/verify-repository.sh
       - name: SBOM

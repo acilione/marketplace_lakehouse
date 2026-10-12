@@ -1,5 +1,114 @@
 @import "../styles.css";
 
+@media (max-width: 600px) {
+  .ct-header-right > .ct-badge {
+    display: none;
+  }
+  .ct-header {
+    gap: 10px;
+  }
+  .ct-mode {
+    font-size: 11px;
+  }
+  .ct-tabs {
+    max-width: 100%;
+    overflow-x: auto;
+    flex-shrink: 0;
+  }
+}
+
+.ct-mode {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  background: #f2f5f3;
+  border-radius: 6px;
+}
+.ct-mode a {
+  padding: 5px 9px;
+  color: #53685d;
+  text-decoration: none;
+  border-radius: 4px;
+}
+.ct-mode a[aria-current] {
+  background: white;
+  color: #235c48;
+  box-shadow: 0 1px 3px #0001;
+}
+.ct-app > .ops-toolbar {
+  padding: 3px 32px;
+  margin: 0;
+  min-height: 26px;
+  flex-shrink: 0;
+  font-size: 11px;
+  background: #f5f7f6;
+  color: var(--ct-muted);
+  border-bottom: 1px solid var(--ct-line);
+}
+.ct-app > .ops-toolbar button {
+  border: 1px solid var(--ct-line);
+  background: white;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 10px;
+  color: var(--ct-green);
+}
+.ct-app > .dashboard-login {
+  margin: 40px auto;
+  max-width: 520px;
+  width: calc(100% - 40px);
+}
+.ct-investigation-form {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.ct-run-stages {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 12px;
+  padding: 0;
+  list-style: none;
+}
+.ct-run-stages li {
+  padding: 12px;
+  border: 1px solid var(--ct-line);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  text-transform: capitalize;
+}
+.ct-run-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+}
+.ct-run-counts dt {
+  color: var(--ct-muted);
+  text-transform: capitalize;
+}
+.ct-run-counts dd {
+  margin: 4px 0;
+  font-size: 22px;
+}
+.ct-run-commands {
+  padding: 16px;
+  border: 1px solid var(--ct-line);
+  background: #f5f7f6;
+  line-height: 1.8;
+  border-radius: 6px;
+}
+.ct-start {
+  overflow-y: auto;
+  gap: 18px;
+}
+.ct-order-link,
+.ct-detail-heading h2 {
+  overflow-wrap: anywhere;
+}
+
 :root {
   font-family: Inter, "Segoe UI", Arial, sans-serif;
   color: #273833;

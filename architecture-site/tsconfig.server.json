@@ -10,9 +10,9 @@
     "noFallthroughCasesInSwitch": true,
     "skipLibCheck": true,
     "types": ["node"],
-    "rootDir": "server",
+    "rootDir": ".",
     "outDir": "server-dist"
   },
-  "include": ["server/**/*.ts"],
+  "include": ["server/**/*.ts", "shared/**/*.ts"],
   "exclude": ["server/**/*.test.ts"]
 }

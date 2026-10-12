@@ -1,23 +1,30 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { OperationsDashboard } from "./OperationsDashboard";
 
-export function DashboardLogin() {
+export function DashboardLogin({
+  children,
+}: {
+  children?: (role: string) => ReactNode;
+}) {
   const [role, setRole] = useState<string | null>(null);
   const [user, setUser] = useState("operator");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   useEffect(() => {
+    const controller = new AbortController();
     const expired = () => setRole(null);
     window.addEventListener("lakehouse-session-expired", expired);
-    void fetch("./api/session")
+    void fetch("./api/session", { signal: controller.signal })
       .then(async (response) => {
-        if (response.ok)
+        if (response.ok && !controller.signal.aborted)
           setRole(((await response.json()) as { role: string }).role);
       })
       .catch(() => undefined);
-    return () =>
+    return () => {
+      controller.abort();
       window.removeEventListener("lakehouse-session-expired", expired);
+    };
   }, []);
   async function signIn() {
     setBusy(true);
@@ -51,24 +58,41 @@ export function DashboardLogin() {
       setBusy(false);
     }
   }
+  async function signOut() {
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch("./api/logout", {
+        method: "POST",
+        headers: { "X-Lakehouse-Request": "dashboard" },
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!response.ok && response.status !== 401)
+        throw new Error("Sign out failed. Please retry.");
+      setRole(null);
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : "Sign out unavailable.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
   if (role)
     return (
       <>
         <div className="ops-toolbar">
           <span>Signed in as {role}</span>
-          <button
-            type="button"
-            onClick={() => {
-              void fetch("./api/logout", {
-                method: "POST",
-                headers: { "X-Lakehouse-Request": "dashboard" },
-              }).then(() => setRole(null));
-            }}
-          >
+          <button type="button" disabled={busy} onClick={() => void signOut()}>
             Sign out
           </button>
+          {error && <span role="alert">{error}</span>}
         </div>
-        <OperationsDashboard canControl={role === "operator"} />
+        {children ? (
+          children(role)
+        ) : (
+          <OperationsDashboard canControl={role === "operator"} />
+        )}
       </>
     );
   return (
@@ -78,6 +102,13 @@ export function DashboardLogin() {
         Viewers can explore data. Operators can also start and stop optional
         services.
       </p>
+      {children && (
+        <p>
+          Start with <code>make showcase</code>, then open{" "}
+          <code>http://localhost:24173</code>. Use Preview for the standalone
+          dashboard.
+        </p>
+      )}
       <label>
         Username
         <select value={user} onChange={(event) => setUser(event.target.value)}>
